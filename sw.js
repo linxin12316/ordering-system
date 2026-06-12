@@ -1,15 +1,12 @@
 // sw.js — Service Worker
-const CACHE_NAME = 'ordering-system-v1';
+const CACHE_NAME = 'ordering-system-v2';
 const urlsToCache = [
   'index.html',
   'css/style.css',
+  'js/vue.global.js',
   'js/db.js',
   'js/utils.js',
-  'js/app.js',
-  'js/components/MenuManage.js',
-  'js/components/NewOrder.js',
-  'js/components/DailyReport.js',
-  'https://unpkg.com/vue@3/dist/vue.global.js'
+  'js/app.js'
 ];
 
 self.addEventListener('install', (e) => {
