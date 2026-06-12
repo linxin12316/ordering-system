@@ -71,20 +71,17 @@ body {
 .order-card .order-header {
   display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
 }
-.order-card .order-number { font-weight: 600; font-size: 15px; }
+.order-card .order-number { font-weight: 700; font-size: 17px; }
 .order-card .order-table { font-size: 14px; color: var(--text-light); }
 .order-card .order-status {
-  font-size: 13px; padding: 3px 10px; border-radius: 4px; background: var(--gray); color: white;
+  font-size: 14px; padding: 4px 12px; border-radius: 4px; background: var(--gray); color: white; font-weight: 600;
 }
-.order-card.status-cooking .order-status { background: var(--warning); }
-.order-card.status-done .order-status { background: var(--success); }
-.order-card.status-paid .order-status { background: var(--primary); }
 
-.order-card .order-items { font-size: 14px; color: var(--text); line-height: 1.6; margin-bottom: 8px; }
+.order-card .order-items { font-size: 16px; color: var(--text); line-height: 1.7; margin-bottom: 8px; font-weight: 500; }
 .order-card .order-footer {
   display: flex; justify-content: space-between; align-items: center;
 }
-.order-card .order-total { font-size: 18px; font-weight: 700; color: var(--danger); }
+.order-card .order-total { font-size: 20px; font-weight: 800; color: var(--danger); }
 .order-card .order-time { font-size: 13px; color: var(--text-light); }
 
 /* 按钮 */
@@ -134,7 +131,7 @@ body {
 }
 .dish-item:last-child { border-bottom: none; }
 .dish-info { flex: 1; }
-.dish-name { font-size: 15px; font-weight: 500; }
+.dish-name { font-size: 16px; font-weight: 600; }
 .dish-price { font-size: 14px; color: var(--text-light); margin-top: 2px; }
 .dish-add-btn {
   width: 38px; height: 38px; border-radius: 50%; background: var(--primary);
