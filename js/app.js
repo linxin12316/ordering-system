@@ -86,15 +86,17 @@ const app = Vue.createApp({
       return map[status] || '';
     },
     async advanceOrder(id) {
-      const order = this.orders.find(o => o.id === id);
-      if (!order) return;
-      const flow = { pending: 'cooking', cooking: 'done', done: 'paid' };
-      const nextStatus = flow[order.status];
-      if (!nextStatus) return;
-      order.status = nextStatus;
-      if (nextStatus === 'paid') order.paidAt = Utils.now();
-      order.updatedAt = Utils.now();
-      await DB.put('orders', order);
+      try {
+        const order = this.orders.find(o => o.id === id);
+        if (!order) { alert('订单不存在'); return; }
+        const flow = { pending: 'cooking', cooking: 'done', done: 'paid' };
+        const nextStatus = flow[order.status];
+        if (!nextStatus) return;
+        order.status = nextStatus;
+        if (nextStatus === 'paid') order.paidAt = Utils.now();
+        order.updatedAt = Utils.now();
+        await DB.put('orders', order);
+      } catch(e) { alert('操作失败: ' + e.message); }
       await this.loadOrders();
     },
     async deleteOrder(id) {
@@ -194,21 +196,32 @@ const app = Vue.createApp({
       return this.dishes.filter(d => d.categoryId === catId && d.available !== false);
     },
     addToCart(dish) {
-      // 同菜品已存在且口味相同则累加，否则弹出口味选择
-      const sameFlavorItem = this.orderCart.find(item => item.dishId === dish.id && item.flavor === this.selectedFlavor);
-      if (sameFlavorItem) {
-        if (sameFlavorItem.priceType === 'per_jin') {
-          sameFlavorItem.weight = (sameFlavorItem.weight || 0) + 1;
-        } else {
-          sameFlavorItem.quantity = (sameFlavorItem.quantity || 0) + 1;
-        }
-        this.recalcItem(sameFlavorItem);
+      // 主菜弹出口味选择，其他直接加
+      if (dish.categoryId === 'cat_main') {
+        this.pendingFlavorDish = dish;
+        this.selectedFlavor = '';
+        this.showFlavorPicker = true;
         return;
       }
-      // 弹出口味选择
-      this.pendingFlavorDish = dish;
-      this.selectedFlavor = '';
-      this.showFlavorPicker = true;
+      // 非主菜直接加
+      const existing = this.orderCart.find(item => item.dishId === dish.id && !item.flavor);
+      if (existing) {
+        if (existing.priceType === 'per_jin') {
+          existing.weight = (existing.weight || 0) + 1;
+        } else {
+          existing.quantity = (existing.quantity || 0) + 1;
+        }
+        this.recalcItem(existing);
+      } else {
+        this.orderCart.push({
+          dishId: dish.id, name: dish.name,
+          priceType: dish.priceType, unitPrice: dish.unitPrice,
+          quantity: dish.priceType === 'per_jin' ? 0 : 1,
+          weight: dish.priceType === 'per_jin' ? 1 : 0,
+          subtotal: dish.unitPrice,
+          flavor: ''
+        });
+      }
     },
     recalcItem(item) {
       if (item.priceType === 'per_jin') {
@@ -229,14 +242,27 @@ const app = Vue.createApp({
     confirmFlavor() {
       const dish = this.pendingFlavorDish;
       if (!dish) return;
-      this.orderCart.push({
-        dishId: dish.id, name: dish.name,
-        priceType: dish.priceType, unitPrice: dish.unitPrice,
-        quantity: dish.priceType === 'per_jin' ? 0 : 1,
-        weight: dish.priceType === 'per_jin' ? 1 : 0,
-        subtotal: dish.unitPrice,
-        flavor: this.selectedFlavor || ''  // 存口味
-      });
+      // 同菜品+同口味累加，不同口味分开
+      const sameItem = this.orderCart.find(
+        item => item.dishId === dish.id && item.flavor === (this.selectedFlavor || '')
+      );
+      if (sameItem) {
+        if (sameItem.priceType === 'per_jin') {
+          sameItem.weight = (sameItem.weight || 0) + 1;
+        } else {
+          sameItem.quantity = (sameItem.quantity || 0) + 1;
+        }
+        this.recalcItem(sameItem);
+      } else {
+        this.orderCart.push({
+          dishId: dish.id, name: dish.name,
+          priceType: dish.priceType, unitPrice: dish.unitPrice,
+          quantity: dish.priceType === 'per_jin' ? 0 : 1,
+          weight: dish.priceType === 'per_jin' ? 1 : 0,
+          subtotal: dish.unitPrice,
+          flavor: this.selectedFlavor || ''
+        });
+      }
       this.showFlavorPicker = false;
       this.pendingFlavorDish = null;
     },
@@ -265,44 +291,45 @@ const app = Vue.createApp({
     },
 
     async submitOrder() {
-      if (this.orderCart.length === 0) { alert('请至少选择一道菜品'); return; }
-      for (const item of this.orderCart) {
-        if (item.priceType === 'per_jin' && (!item.weight || item.weight <= 0)) {
-          alert('请填写「' + item.name + '」的斤数'); return;
+      try {
+        if (this.orderCart.length === 0) { alert('请至少选择一道菜品'); return; }
+        for (const item of this.orderCart) {
+          if (item.priceType === 'per_jin' && (!item.weight || item.weight <= 0)) {
+            alert('请填写「' + item.name + '」的斤数'); return;
+          }
         }
-      }
-      const items = this.orderCart.map(item => ({
-        dishId: item.dishId, name: item.name,
-        priceType: item.priceType, unitPrice: item.unitPrice,
-        quantity: item.priceType === 'per_jin' ? 0 : (item.quantity || 1),
-        weight: item.priceType === 'per_jin' ? parseFloat(item.weight) || 0 : 0,
-        subtotal: Math.round(item.subtotal * 100) / 100,
-        flavor: item.flavor || ''
-      }));
+        const items = this.orderCart.map(item => ({
+          dishId: item.dishId, name: item.name,
+          priceType: item.priceType, unitPrice: item.unitPrice,
+          quantity: item.priceType === 'per_jin' ? 0 : (item.quantity || 1),
+          weight: item.priceType === 'per_jin' ? parseFloat(item.weight) || 0 : 0,
+          subtotal: Math.round(item.subtotal * 100) / 100,
+          flavor: item.flavor || ''
+        }));
 
-      if (this.addItemsToOrderId) {
-        // 加菜到已有订单
-        const order = this.orders.find(o => o.id === this.addItemsToOrderId);
-        if (!order) { alert('订单不存在'); return; }
-        order.items.push(...items);
-        order.totalAmount = Math.round(order.items.reduce((sum, i) => sum + i.subtotal, 0) * 100) / 100;
-        order._addItems = true;
-        order.updatedAt = Utils.now();
-        await DB.put('orders', order);
-      } else {
-        // 新订单
-        const totalAmount = Math.round(items.reduce((sum, item) => sum + item.subtotal, 0) * 100) / 100;
-        const maxNum = await DB.getMaxOrderNumber(Utils.today());
-        await DB.put('orders', {
-          id: Utils.genId(),
-          orderNumber: maxNum + 1,
-          tableNote: this.orderTableNote.trim(),
-          items, totalAmount,
-          status: 'pending',
-          createdAt: Utils.now(),
-          paidAt: null
-        });
-      }
+        if (this.addItemsToOrderId) {
+          const order = this.orders.find(o => o.id === this.addItemsToOrderId);
+          if (!order) { alert('订单不存在'); return; }
+          order.items.push(...items);
+          order.totalAmount = Math.round(order.items.reduce((sum, i) => sum + i.subtotal, 0) * 100) / 100;
+          order._addItems = true;
+          order.updatedAt = Utils.now();
+          await DB.put('orders', order);
+        } else {
+          const totalAmount = Math.round(items.reduce((sum, item) => sum + item.subtotal, 0) * 100) / 100;
+          const maxNum = await DB.getMaxOrderNumber(Utils.today());
+          await DB.put('orders', {
+            id: Utils.genId(),
+            orderNumber: maxNum + 1,
+            tableNote: this.orderTableNote.trim(),
+            items, totalAmount,
+            status: 'pending',
+            createdAt: Utils.now(),
+            paidAt: null
+          });
+        }
+      } catch(e) { alert('提交失败: ' + e.message); }
+
       // 重置表单并返回
       this.addItemsToOrderId = null;
       this.orderCart = [];

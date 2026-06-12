@@ -47,10 +47,12 @@ const DB = {
   },
 
   async put(storeName, data) {
+    // 深拷贝，去除 Vue 响应式代理
+    const plain = JSON.parse(JSON.stringify(data));
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(storeName, 'readwrite');
       const store = tx.objectStore(storeName);
-      const req = store.put(data);
+      const req = store.put(plain);
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
