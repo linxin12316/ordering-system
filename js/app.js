@@ -267,6 +267,7 @@ const app = Vue.createApp({
       } else {
         this.orderCart.push({
           dishId: dish.id, name: dish.name, categoryId: dish.categoryId,
+          dishId: dish.id, name: dish.name,
           priceType: dish.priceType, unitPrice: dish.unitPrice,
           quantity: dish.priceType === 'per_jin' ? 0 : 1,
           weight: dish.priceType === 'per_jin' ? 1 : 0,
@@ -308,6 +309,7 @@ const app = Vue.createApp({
       } else {
         this.orderCart.push({
           dishId: dish.id, name: dish.name, categoryId: dish.categoryId,
+          dishId: dish.id, name: dish.name,
           priceType: dish.priceType, unitPrice: dish.unitPrice,
           quantity: dish.priceType === 'per_jin' ? 0 : 1,
           weight: dish.priceType === 'per_jin' ? 1 : 0,
