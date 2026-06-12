@@ -157,6 +157,17 @@ const app = Vue.createApp({
       await this.loadOrders();
     },
 
+    sortItems(items) {
+      if (!items || !items.length) return [];
+      // 按 category 排序，同类排一起
+      const catOrder = ['cat_main', 'cat_fry', 'cat_side', 'cat_drink', 'cat_other'];
+      return [...items].sort((a, b) => {
+        const ai = catOrder.indexOf(a.categoryId);
+        const bi = catOrder.indexOf(b.categoryId);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      });
+    },
+
     async loadOrders() {
       this.orders = await DB.getAll('orders');
       this.orders.sort((a, b) => (b.createdAt || '') > (a.createdAt || '') ? 1 : -1);
@@ -266,7 +277,7 @@ const app = Vue.createApp({
         this.recalcItem(existing);
       } else {
         this.orderCart.push({
-          dishId: dish.id, name: dish.name,
+          dishId: dish.id, name: dish.name, categoryId: dish.categoryId,
           priceType: dish.priceType, unitPrice: dish.unitPrice,
           quantity: dish.priceType === 'per_jin' ? 0 : 1,
           weight: dish.priceType === 'per_jin' ? 1 : 0,
@@ -307,7 +318,7 @@ const app = Vue.createApp({
         this.recalcItem(sameItem);
       } else {
         this.orderCart.push({
-          dishId: dish.id, name: dish.name,
+          dishId: dish.id, name: dish.name, categoryId: dish.categoryId,
           priceType: dish.priceType, unitPrice: dish.unitPrice,
           quantity: dish.priceType === 'per_jin' ? 0 : 1,
           weight: dish.priceType === 'per_jin' ? 1 : 0,
@@ -351,7 +362,7 @@ const app = Vue.createApp({
           }
         }
         const items = this.orderCart.map(item => ({
-          dishId: item.dishId, name: item.name,
+          dishId: item.dishId, name: item.name, categoryId: item.categoryId,
           priceType: item.priceType, unitPrice: item.unitPrice,
           quantity: item.priceType === 'per_jin' ? 0 : (item.quantity || 1),
           weight: item.priceType === 'per_jin' ? parseFloat(item.weight) || 0 : 0,
