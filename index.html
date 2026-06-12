@@ -53,7 +53,7 @@
           <div style="display:flex;gap:6px">
             <button v-if="o.status !== 'paid'" class="btn btn-primary" style="padding:6px 14px;font-size:13px"
                     @click="advanceOrder(o.id)">{{ nextBtnLabel(o.status) }}</button>
-            <button v-if="o.status === 'pending' || o.status === 'cooking'" class="btn btn-outline" style="padding:6px 10px;font-size:12px"
+            <button v-if="o.status !== 'paid'" class="btn btn-outline" style="padding:6px 10px;font-size:12px"
                     @click="startAddItems(o)">加菜</button>
             <button class="btn btn-danger" style="padding:6px 10px;font-size:12px"
                     @click="deleteOrder(o.id)">✕</button>
