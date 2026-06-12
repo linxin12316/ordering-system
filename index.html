@@ -33,7 +33,7 @@
         <div class="order-header">
           <div>
             <span class="order-number">#{{ String(o.orderNumber).padStart(3, '0') }}</span>
-            <span class="order-table" v-if="o.tableNote"> · {{ o.tableNote }}</span>
+            <span class="order-table" v-if="o.tableNote"> ({{ o.tableNote }})</span>
           </div>
           <span class="order-status">{{ statusLabel(o.status) }}</span>
         </div>
@@ -277,7 +277,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div>
             <span style="font-weight:600">#{{ String(o.orderNumber).padStart(3, '0') }}</span>
-            <span v-if="o.tableNote" style="font-size:13px;color:var(--text-light);margin-left:4px">{{ o.tableNote }}</span>
+            <span v-if="o.tableNote" style="font-size:13px;color:var(--text-light);margin-left:4px">({{ o.tableNote }})</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px">
             <span style="font-weight:700;font-size:16px;color:var(--danger)">¥{{ o.totalAmount.toFixed(2) }}</span>
