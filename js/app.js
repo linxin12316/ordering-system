@@ -354,6 +354,7 @@ const app = Vue.createApp({
         }
         const items = this.orderCart.map(item => ({
           dishId: item.dishId, name: item.name, categoryId: item.categoryId,
+          dishId: item.dishId, name: item.name,
           priceType: item.priceType, unitPrice: item.unitPrice,
           quantity: item.priceType === 'per_jin' ? 0 : (item.quantity || 1),
           weight: item.priceType === 'per_jin' ? parseFloat(item.weight) || 0 : 0,
@@ -381,6 +382,7 @@ const app = Vue.createApp({
               order.items.push(newItem);
             }
           }
+          order.items.push(...items);
           order.totalAmount = Math.round(order.items.reduce((sum, i) => sum + i.subtotal, 0) * 100) / 100;
           order._addItems = true;
           order.updatedAt = Utils.now();
