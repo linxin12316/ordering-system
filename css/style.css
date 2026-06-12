@@ -193,6 +193,10 @@ body {
 /* 空状态 */
 .empty-state { text-align: center; padding: 40px 20px; color: var(--text-light); font-size: 15px; }
 
+/* 颜色工具类 */
+.green { color: var(--success); }
+.red { color: var(--danger); }
+
 /* 切换开关 */
 .toggle-btn {
   padding: 6px 14px; border-radius: 14px; font-size: 13px; border: 1px solid var(--border);

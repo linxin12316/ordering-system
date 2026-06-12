@@ -10,6 +10,8 @@ const app = Vue.createApp({
       orders: [],
       dishes: [],
       categories: [],
+      purchases: [],
+      purchaseCategories: [],
 
       // === 菜单管理 ===
       menuActiveCat: null,
@@ -38,6 +40,18 @@ const app = Vue.createApp({
         { value: '鸳鸯(青椒+清汤)', label: '鸳鸯(青椒+清汤)' },
       ],
 
+      // === 采购记录 ===
+      purchaseDate: '',
+      purchaseCateId: '',
+      purchaseAmount: '',
+      purchaseNote: '',
+      purchaseFilterDate: '',
+      purchaseDateTotal: 0,
+
+      // === 采购分类管理 ===
+      showPurchaseCatManager: false,
+      newPurchaseCatName: '',
+
       // === 每日报表 ===
       reportDate: '',
       reportPeriod: 'day',
@@ -45,7 +59,15 @@ const app = Vue.createApp({
       reportYear: 2026,
       reportWeek: '',
       reportOrders: [],
-      reportStats: { total: 0, paid: 0, done: 0, revenue: 0 }
+      reportStats: { total: 0, paid: 0, done: 0, revenue: 0 },
+
+      // === 利润分析 ===
+      profitPeriod: 'day',
+      profitDate: '',
+      profitMonth: '',
+      profitYear: 2026,
+      profitStats: { revenue: 0, cost: 0, profit: 0, profitRate: 0, orderCount: 0 },
+      profitDetails: []
     };
   },
 
@@ -78,6 +100,26 @@ const app = Vue.createApp({
       if (!this.reportDate) return '';
       const range = this.getWeekRange(this.reportDate);
       return `第${range.weekNum}周 (${range.start.replace('-','/')} - ${range.end.replace('-','/')})`;
+    },
+
+    // ---- 利润 ----
+    profitWeekRangeText() {
+      if (!this.profitDate) return '';
+      const range = this.getWeekRange(this.profitDate);
+      return `第${range.weekNum}周 (${range.start.replace('-','/')} - ${range.end.replace('-','/')})`;
+    },
+
+    // ---- 采购 ----
+    filteredPurchaseList() {
+      if (!this.purchaseFilterDate) return [];
+      return this.purchases.filter(p => p.date === this.purchaseFilterDate)
+        .sort((a, b) => (a.createdAt || '') > (b.createdAt || '') ? 1 : -1);
+    },
+    purchaseCatName() {
+      return (id) => {
+        const c = this.purchaseCategories.find(c => c.id === id);
+        return c ? c.name : id;
+      };
     }
   },
 
@@ -107,17 +149,25 @@ const app = Vue.createApp({
           alert('格式错误：备份文件缺少 dishes 或 orders 数据');
           return;
         }
-        if (!confirm(`将导入 ${data.dishes.length} 条菜品/分类、${data.orders.length} 条订单数据，是否覆盖当前数据？`)) return;
+        if (!confirm(`将导入 ${data.dishes.length} 条菜品/分类、${data.orders.length} 条订单、${data.purchases ? data.purchases.length : 0} 条采购记录，是否覆盖当前数据？`)) return;
 
         // 清空旧数据
         const oldDishes = await DB.getAll('dishes');
         for (const d of oldDishes) await DB.delete('dishes', d.id);
         const oldOrders = await DB.getAll('orders');
         for (const o of oldOrders) await DB.delete('orders', o.id);
+        const oldPurchases = await DB.getAll('purchases');
+        for (const p of oldPurchases) await DB.delete('purchases', p.id);
 
         // 写入新数据
         for (const d of data.dishes) await DB.put('dishes', d);
         for (const o of data.orders) await DB.put('orders', o);
+        if (data.purchases) {
+          for (const p of data.purchases) await DB.put('purchases', p);
+        }
+        if (data.purchaseCats) {
+          await DB.setMeta('purchaseCategories', data.purchaseCats);
+        }
 
         // 重置备份标记，下次自动备份
         await DB.setMeta('lastBackupDate', '');
@@ -125,6 +175,8 @@ const app = Vue.createApp({
         alert(`✅ 导入成功！${data.dishes.length} 条菜品/分类，${data.orders.length} 条订单`);
         await this.loadDishes();
         await this.loadOrders();
+        await this.loadPurchases();
+        await this.loadPurchaseCategories();
         await this.loadReport();
       } catch(e) {
         alert('导入失败：文件格式错误或数据损坏\n' + e.message);
@@ -267,7 +319,6 @@ const app = Vue.createApp({
       } else {
         this.orderCart.push({
           dishId: dish.id, name: dish.name, categoryId: dish.categoryId,
-          dishId: dish.id, name: dish.name,
           priceType: dish.priceType, unitPrice: dish.unitPrice,
           quantity: dish.priceType === 'per_jin' ? 0 : 1,
           weight: dish.priceType === 'per_jin' ? 1 : 0,
@@ -309,7 +360,6 @@ const app = Vue.createApp({
       } else {
         this.orderCart.push({
           dishId: dish.id, name: dish.name, categoryId: dish.categoryId,
-          dishId: dish.id, name: dish.name,
           priceType: dish.priceType, unitPrice: dish.unitPrice,
           quantity: dish.priceType === 'per_jin' ? 0 : 1,
           weight: dish.priceType === 'per_jin' ? 1 : 0,
@@ -354,7 +404,6 @@ const app = Vue.createApp({
         }
         const items = this.orderCart.map(item => ({
           dishId: item.dishId, name: item.name, categoryId: item.categoryId,
-          dishId: item.dishId, name: item.name,
           priceType: item.priceType, unitPrice: item.unitPrice,
           quantity: item.priceType === 'per_jin' ? 0 : (item.quantity || 1),
           weight: item.priceType === 'per_jin' ? parseFloat(item.weight) || 0 : 0,
@@ -382,7 +431,6 @@ const app = Vue.createApp({
               order.items.push(newItem);
             }
           }
-          order.items.push(...items);
           order.totalAmount = Math.round(order.items.reduce((sum, i) => sum + i.subtotal, 0) * 100) / 100;
           order._addItems = true;
           order.updatedAt = Utils.now();
@@ -410,12 +458,146 @@ const app = Vue.createApp({
       await this.loadOrders();
     },
 
-    // ---- 报表 ----
-    switchPeriod(period) {
-      this.reportPeriod = period;
-      if (period === 'month') this.reportMonth = Utils.today().substring(0, 7);
-      if (period === 'year') this.reportYear = parseInt(Utils.today().substring(0, 4));
-      this.loadReport();
+    // ---- 采购类加载 ----
+    async loadPurchaseCategories() {
+      this.purchaseCategories = await Utils.initPurchaseCategories();
+    },
+    async openAddPurchaseCat() {
+      this.newPurchaseCatName = '';
+      this.showPurchaseCatManager = true;
+    },
+    async addPurchaseCat() {
+      if (!this.newPurchaseCatName.trim()) { alert('请输入分类名称'); return; }
+      const maxOrder = this.purchaseCategories.reduce((m, c) => Math.max(m, c.sortOrder || 0), 0);
+      this.purchaseCategories.push({
+        id: 'pc_' + Utils.genId(),
+        name: this.newPurchaseCatName.trim(),
+        sortOrder: maxOrder + 1
+      });
+      await Utils.savePurchaseCategories(this.purchaseCategories);
+      this.newPurchaseCatName = '';
+    },
+    async renamePurchaseCat(id, name) {
+      if (!name.trim()) return;
+      const cat = this.purchaseCategories.find(c => c.id === id);
+      if (cat && cat.name !== name.trim()) {
+        cat.name = name.trim();
+        await Utils.savePurchaseCategories(this.purchaseCategories);
+      }
+    },
+    async deletePurchaseCat(id) {
+      if (!confirm('确定删除此采购分类？已使用该分类的采购记录不受影响。')) return;
+      this.purchaseCategories = this.purchaseCategories.filter(c => c.id !== id);
+      await Utils.savePurchaseCategories(this.purchaseCategories);
+    },
+
+    // ---- 采购记录 ----
+    async loadPurchases() {
+      this.purchases = await DB.getAll('purchases');
+      this.purchases.sort((a, b) => (a.date || '') > (b.date || '') ? -1 : 1);
+    },
+    async addPurchase() {
+      if (!this.purchaseCateId) { alert('请选择采购分类'); return; }
+      const amount = parseFloat(this.purchaseAmount);
+      if (isNaN(amount) || amount <= 0) { alert('请输入有效金额'); return; }
+      await DB.put('purchases', {
+        id: Utils.genId(),
+        date: this.purchaseDate || Utils.today(),
+        categoryId: this.purchaseCateId,
+        amount: Math.round(amount * 100) / 100,
+        note: this.purchaseNote.trim(),
+        createdAt: Utils.now()
+      });
+      this.purchaseCateId = '';
+      this.purchaseAmount = '';
+      this.purchaseNote = '';
+      await this.loadPurchases();
+      this.calcPurchaseDateTotal();
+    },
+    async deletePurchase(id) {
+      if (!confirm('确定删除此采购记录？')) return;
+      await DB.delete('purchases', id);
+      await this.loadPurchases();
+      this.calcPurchaseDateTotal();
+    },
+    calcPurchaseDateTotal() {
+      const list = this.purchases.filter(p => p.date === this.purchaseFilterDate);
+      this.purchaseDateTotal = list.reduce((s, p) => s + (p.amount || 0), 0);
+    },
+
+    // ---- 利润分析 ----
+    switchProfitPeriod(period) {
+      this.profitPeriod = period;
+      if (period === 'month') this.profitMonth = Utils.today().substring(0, 7);
+      if (period === 'year') this.profitYear = parseInt(Utils.today().substring(0, 4));
+      this.loadProfit();
+    },
+    loadProfit() {
+      const allOrders = this.orders;
+      const allPurchases = this.purchases;
+
+      let startDate = '', endDate = '';
+      if (this.profitPeriod === 'day') {
+        startDate = this.profitDate;
+        endDate = this.profitDate;
+      } else if (this.profitPeriod === 'week') {
+        const range = this.getWeekRange(this.profitDate);
+        startDate = range.start;
+        endDate = range.end;
+      } else if (this.profitPeriod === 'month') {
+        startDate = this.profitMonth + '-01';
+        const y = parseInt(this.profitMonth.substring(0, 4));
+        const m = parseInt(this.profitMonth.substring(5, 7));
+        const lastDay = new Date(y, m, 0).getDate();
+        endDate = this.profitMonth + '-' + String(lastDay).padStart(2, '0');
+      } else if (this.profitPeriod === 'year') {
+        startDate = this.profitYear + '-01-01';
+        endDate = this.profitYear + '-12-31';
+      }
+
+      // 营收
+      const periodOrders = allOrders.filter(o => {
+        if (!o.createdAt || o.status !== 'paid') return false;
+        const d = o.createdAt.substring(0, 10);
+        return d >= startDate && d <= endDate;
+      });
+      const revenue = periodOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+
+      // 采购成本
+      const periodPurchases = allPurchases.filter(p => {
+        return p.date >= startDate && p.date <= endDate;
+      });
+      const cost = periodPurchases.reduce((sum, p) => sum + (p.amount || 0), 0);
+      const profit = Math.round((revenue - cost) * 100) / 100;
+      const profitRate = revenue > 0 ? Math.round(profit / revenue * 10000) / 100 : 0;
+
+      this.profitStats = {
+        revenue: Math.round(revenue * 100) / 100,
+        cost: Math.round(cost * 100) / 100,
+        profit,
+        profitRate,
+        orderCount: periodOrders.length
+      };
+
+      // 按天汇总明细
+      const dayMap = {};
+      for (const o of periodOrders) {
+        const d = o.createdAt.substring(0, 10);
+        if (!dayMap[d]) dayMap[d] = { revenue: 0, cost: 0 };
+        dayMap[d].revenue += o.totalAmount || 0;
+      }
+      for (const p of periodPurchases) {
+        if (!dayMap[p.date]) dayMap[p.date] = { revenue: 0, cost: 0 };
+        dayMap[p.date].cost += p.amount || 0;
+      }
+      this.profitDetails = Object.entries(dayMap)
+        .map(([date, v]) => ({
+          date,
+          revenue: Math.round(v.revenue * 100) / 100,
+          cost: Math.round(v.cost * 100) / 100,
+          profit: Math.round((v.revenue - v.cost) * 100) / 100
+        }))
+        .sort((a, b) => a.date > b.date ? -1 : 1);
     },
 
     getWeekRange(dateStr) {
@@ -471,6 +653,11 @@ const app = Vue.createApp({
     this.reportDate = Utils.today();
     this.reportMonth = Utils.today().substring(0, 7);
     this.reportYear = parseInt(Utils.today().substring(0, 4));
+    this.purchaseDate = Utils.today();
+    this.purchaseFilterDate = Utils.today();
+    this.profitDate = Utils.today();
+    this.profitMonth = Utils.today().substring(0, 7);
+    this.profitYear = parseInt(Utils.today().substring(0, 4));
     await DB.open();
 
     // 每日自动备份
@@ -484,11 +671,19 @@ const app = Vue.createApp({
     await Utils.initDefaultData();
     await this.loadDishes();
     await this.loadOrders();
+    await this.loadPurchaseCategories();
+    await this.loadPurchases();
     await this.loadReport();
+    this.calcPurchaseDateTotal();
 
     this.$watch('page', async (newVal) => {
       if (newVal === 'queue') { await this.loadOrders(); }
       if (newVal === 'report') { await this.loadReport(); }
+      if (newVal === 'purchase') {
+        this.purchaseFilterDate = Utils.today();
+        this.calcPurchaseDateTotal();
+      }
+      if (newVal === 'profit') { this.loadProfit(); }
       if (newVal === 'order' && !this.addItemsToOrderId) {
         this.orderCart = [];
         this.orderTableNote = '';

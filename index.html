@@ -291,6 +291,131 @@
       </div>
     </div>
 
+    <!-- ========== 采购记录 ========== -->
+    <div class="page" :class="{ active: page === 'purchase' }">
+      <div class="header">
+        <h1>🛒 采购记录</h1>
+        <button class="btn btn-outline" style="padding:6px 12px;font-size:12px" @click="openAddPurchaseCat">分类管理</button>
+      </div>
+
+      <!-- 录入表单 -->
+      <div class="card" style="padding:14px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="form-group" style="margin:0">
+            <label style="font-size:12px">日期</label>
+            <input class="form-input" type="date" v-model="purchaseDate" style="font-size:14px;padding:8px">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:12px">分类</label>
+            <select class="form-select" v-model="purchaseCateId" style="font-size:14px;padding:8px">
+              <option value="" disabled>选择分类</option>
+              <option v-for="cat in purchaseCategories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <div class="form-group" style="flex:1;margin:0">
+            <label style="font-size:12px">金额 (元)</label>
+            <input class="form-input" type="number" v-model.number="purchaseAmount" placeholder="0.00" step="0.01" min="0" style="font-size:16px;padding:8px">
+          </div>
+          <div class="form-group" style="flex:1;margin:0">
+            <label style="font-size:12px">备注</label>
+            <input class="form-input" v-model="purchaseNote" placeholder="选填" style="font-size:14px;padding:8px">
+          </div>
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:10px;padding:10px;font-size:15px" @click="addPurchase">+ 添加采购记录</button>
+      </div>
+
+      <!-- 今日采购清单 -->
+      <div style="display:flex;align-items:center;gap:8px;margin:14px 0 8px">
+        <input class="form-input" type="date" v-model="purchaseFilterDate" @change="calcPurchaseDateTotal" style="width:auto;font-size:14px;padding:6px 8px;display:inline-block">
+        <span style="font-size:14px;color:var(--text-light);margin-left:auto">
+          合计: <strong style="color:var(--danger);font-size:18px">¥{{ purchaseDateTotal.toFixed(2) }}</strong>
+        </span>
+      </div>
+      <div v-if="filteredPurchaseList.length === 0" class="empty-state">暂无采购记录</div>
+      <div v-for="p in filteredPurchaseList" :key="p.id" class="card" style="padding:10px;display:flex;align-items:center;gap:10px">
+        <span class="cat-tag" style="font-size:12px;padding:3px 10px;background:var(--primary);color:white;border:none">{{ purchaseCatName(p.categoryId) }}</span>
+        <span style="font-size:18px;font-weight:700;color:var(--danger);margin-right:auto">¥{{ (p.amount || 0).toFixed(2) }}</span>
+        <span v-if="p.note" style="font-size:12px;color:var(--text-light);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.note }}</span>
+        <button class="btn btn-danger" style="padding:4px 8px;font-size:12px" @click="deletePurchase(p.id)">✕</button>
+      </div>
+    </div>
+
+    <!-- ========== 利润分析 ========== -->
+    <div class="page" :class="{ active: page === 'profit' }">
+      <div class="header">
+        <h1>💰 利润分析</h1>
+      </div>
+
+      <!-- 周期切换 -->
+      <div class="status-tabs" style="margin-bottom:10px">
+        <span class="status-tab" :class="{ active: profitPeriod === 'day' }" @click="switchProfitPeriod('day')">日报</span>
+        <span class="status-tab" :class="{ active: profitPeriod === 'week' }" @click="switchProfitPeriod('week')">周报</span>
+        <span class="status-tab" :class="{ active: profitPeriod === 'month' }" @click="switchProfitPeriod('month')">月报</span>
+        <span class="status-tab" :class="{ active: profitPeriod === 'year' }" @click="switchProfitPeriod('year')">年报</span>
+      </div>
+
+      <!-- 日期选择 -->
+      <div class="form-group">
+        <input v-if="profitPeriod === 'day'" class="form-input" type="date" v-model="profitDate" @change="loadProfit">
+        <input v-if="profitPeriod === 'week'" class="form-input" type="date" v-model="profitDate" @change="loadProfit">
+        <input v-if="profitPeriod === 'month'" class="form-input" type="month" v-model="profitMonth" @change="loadProfit">
+        <input v-if="profitPeriod === 'year'" class="form-input" type="number" v-model.number="profitYear" :min="2020" :max="2099" @change="loadProfit" style="font-size:18px;font-weight:600">
+      </div>
+
+      <!-- 周期范围 -->
+      <div style="text-align:center;font-size:13px;color:var(--text-light);margin-bottom:8px">
+        <template v-if="profitPeriod === 'day'">{{ profitDate }}</template>
+        <template v-if="profitPeriod === 'week'">{{ profitWeekRangeText }}</template>
+        <template v-if="profitPeriod === 'month'">{{ profitMonth }}</template>
+        <template v-if="profitPeriod === 'year'">{{ profitYear }}年</template>
+      </div>
+
+      <!-- 统计卡片 -->
+      <div class="stat-cards" style="grid-template-columns:1fr 1fr">
+        <div class="stat-card">
+          <div class="stat-label">营业额</div>
+          <div class="stat-number blue">¥{{ profitStats.revenue.toFixed(2) }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">采购成本</div>
+          <div class="stat-number" style="font-size:22px;color:var(--warning)">¥{{ profitStats.cost.toFixed(2) }}</div>
+        </div>
+        <div class="stat-card" style="grid-column:span 1">
+          <div class="stat-label">净利润</div>
+          <div class="stat-number" :class="profitStats.profit >= 0 ? 'green' : 'red'">
+            ¥{{ profitStats.profit.toFixed(2) }}
+          </div>
+        </div>
+        <div class="stat-card" style="grid-column:span 1">
+          <div class="stat-label">利润率</div>
+          <div class="stat-number" :class="profitStats.profitRate >= 0 ? 'green' : 'red'">
+            {{ profitStats.profitRate }}%
+          </div>
+        </div>
+      </div>
+
+      <!-- 每日明细 -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <h3 style="font-size:15px">每日明细</h3>
+        <span style="font-size:12px;color:var(--text-light)">{{ profitStats.orderCount }} 单已付款</span>
+      </div>
+      <div v-if="profitDetails.length === 0" class="empty-state">暂无数据</div>
+      <div v-for="d in profitDetails" :key="d.date" class="card" style="padding:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-weight:600;font-size:14px">{{ d.date }}</span>
+          <span style="font-weight:700;font-size:16px" :class="d.profit >= 0 ? 'green' : 'red'">
+            ¥{{ d.profit.toFixed(2) }}
+          </span>
+        </div>
+        <div style="font-size:12px;color:var(--text-light);margin-top:4px;display:flex;gap:16px">
+          <span>营收 <strong style="color:var(--primary)">¥{{ d.revenue.toFixed(2) }}</strong></span>
+          <span>成本 <strong style="color:var(--warning)">¥{{ d.cost.toFixed(2) }}</strong></span>
+        </div>
+      </div>
+    </div>
+
     <!-- 隐藏的文件选择器（导入用） -->
     <input type="file" ref="fileInput" accept=".json" @change="onFileSelected" style="display:none">
 
@@ -313,6 +438,27 @@
       </div>
     </div>
 
+    <!-- ========== 采购分类管理弹窗 ========== -->
+    <div class="modal-overlay" v-if="showPurchaseCatManager" @click.self="showPurchaseCatManager = false">
+      <div class="modal">
+        <h3>采购分类管理</h3>
+        <div v-for="cat in purchaseCategories" :key="cat.id" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <span style="flex:1;font-size:14px">{{ cat.name }}</span>
+          <input class="form-input" style="flex:2;padding:6px;font-size:13px"
+                 :value="cat.name" @change="renamePurchaseCat(cat.id, $event.target.value)">
+          <button class="btn btn-danger" style="padding:4px 8px;font-size:12px"
+                  @click="deletePurchaseCat(cat.id)">✕</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <input class="form-input" v-model="newPurchaseCatName" placeholder="新分类名" style="font-size:14px">
+          <button class="btn btn-primary" @click="addPurchaseCat">添加</button>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" @click="showPurchaseCatManager = false">关闭</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 底部导航 -->
     <nav class="bottom-nav">
       <button :class="{ active: page === 'queue' }" @click="page='queue'">
@@ -321,12 +467,18 @@
       <button :class="{ active: page === 'menu' }" @click="page='menu'">
         <span class="nav-icon">📝</span>菜单
       </button>
+      <button :class="{ active: page === 'purchase' }" @click="page='purchase'">
+        <span class="nav-icon">🛒</span>采购
+      </button>
       <button :class="{ active: page === 'report' }" @click="page='report'">
         <span class="nav-icon">📊</span>报表
       </button>
+      <button :class="{ active: page === 'profit' }" @click="page='profit'">
+        <span class="nav-icon">💰</span>利润
+      </button>
     </nav>
 
-    <button class="fab" @click="page='order'" v-show="page !== 'order'">+</button>
+    <button class="fab" @click="page='order'" v-show="page !== 'order' && page !== 'purchase'">+</button>
   </div>
 
   <script src="js/vue.global.js?v=3"></script>

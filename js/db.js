@@ -1,7 +1,7 @@
 // js/db.js — IndexedDB 封装
 const DB = {
   dbName: 'ordering_system',
-  dbVersion: 1,
+  dbVersion: 2,
   db: null,
 
   async open() {
@@ -19,6 +19,11 @@ const DB = {
         }
         if (!db.objectStoreNames.contains('meta')) {
           db.createObjectStore('meta', { keyPath: 'key' });
+        }
+        if (!db.objectStoreNames.contains('purchases')) {
+          const store = db.createObjectStore('purchases', { keyPath: 'id' });
+          store.createIndex('date', 'date', { unique: false });
+          store.createIndex('categoryId', 'categoryId', { unique: false });
         }
       };
       req.onsuccess = (e) => { this.db = e.target.result; resolve(); };

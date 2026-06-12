@@ -28,6 +28,27 @@ const Utils = {
     return `${this.today()} 星期${weekDays[d.getDay()]}`;
   },
 
+  defaultPurchaseCategories: [
+    { id: 'pc_meat', name: '肉类', sortOrder: 1 },
+    { id: 'pc_veg', name: '蔬菜', sortOrder: 2 },
+    { id: 'pc_fish', name: '水产', sortOrder: 3 },
+    { id: 'pc_spice', name: '调料', sortOrder: 4 },
+    { id: 'pc_grain', name: '粮油', sortOrder: 5 },
+    { id: 'pc_drink', name: '酒水', sortOrder: 6 },
+    { id: 'pc_other', name: '其他', sortOrder: 7 }
+  ],
+
+  async initPurchaseCategories() {
+    let cats = await DB.getMeta('purchaseCategories');
+    if (cats) return JSON.parse(cats);
+    await DB.setMeta('purchaseCategories', JSON.stringify(this.defaultPurchaseCategories));
+    return [...this.defaultPurchaseCategories];
+  },
+
+  async savePurchaseCategories(cats) {
+    await DB.setMeta('purchaseCategories', JSON.stringify(cats));
+  },
+
   defaultCategories: [
     { id: 'cat_main', name: '主菜', sortOrder: 1 },
     { id: 'cat_side', name: '配菜', sortOrder: 2 },
@@ -63,8 +84,10 @@ const Utils = {
   async exportData() {
     const dishes = await DB.getAll('dishes');
     const orders = await DB.getAll('orders');
+    const purchases = await DB.getAll('purchases');
+    const purchaseCats = await DB.getMeta('purchaseCategories');
     const blob = new Blob(
-      [JSON.stringify({ dishes, orders, exportedAt: this.now() }, null, 2)],
+      [JSON.stringify({ dishes, orders, purchases, purchaseCats, exportedAt: this.now() }, null, 2)],
       { type: 'application/json' }
     );
     const url = URL.createObjectURL(blob);
