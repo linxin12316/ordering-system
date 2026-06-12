@@ -14,6 +14,7 @@ const app = Vue.createApp({
       purchaseCategories: [],
 
       // === 菜单管理 ===
+      menuSearch: '',
       menuActiveCat: null,
       showDishForm: false,
       showCatManager: false,
@@ -253,8 +254,13 @@ const app = Vue.createApp({
       this.editingDish = null;
     },
     getCatDishes(catId) {
-      return this.dishes.filter(d => d.categoryId === catId)
+      let list = this.dishes.filter(d => d.categoryId === catId)
         .sort((a, b) => (a.createdAt || '') > (b.createdAt || '') ? -1 : 1);
+      if (this.menuSearch.trim()) {
+        const term = this.menuSearch.trim().toLowerCase();
+        list = list.filter(d => d.name.toLowerCase().includes(term));
+      }
+      return list;
     },
     canDeleteCat(catId) {
       return !['cat_main', 'cat_side', 'cat_fry', 'cat_drink', 'cat_other'].includes(catId);
