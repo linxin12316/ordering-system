@@ -1,5 +1,5 @@
 // sw.js — Service Worker
-const CACHE_NAME = 'ordering-system-v2';
+const CACHE_NAME = 'ordering-system-v3';
 const urlsToCache = [
   'index.html',
   'css/style.css',
@@ -10,6 +10,7 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', (e) => {
+  self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
   );
@@ -23,8 +24,11 @@ self.addEventListener('fetch', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then(names => Promise.all(
-      names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n))
-    ))
+    Promise.all([
+      caches.keys().then(names => Promise.all(
+        names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n))
+      )),
+      self.clients.claim()
+    ])
   );
 });
