@@ -91,6 +91,47 @@ const app = Vue.createApp({
 
     async exportData() { await Utils.exportData(); },
 
+    // ---- 数据导入 ----
+    importData() {
+      // 触发文件选择
+      const input = document.querySelector('input[type=file][accept=".json"]');
+      if (input) input.click();
+    },
+    async onFileSelected(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (!data.dishes || !data.orders) {
+          alert('格式错误：备份文件缺少 dishes 或 orders 数据');
+          return;
+        }
+        if (!confirm(`将导入 ${data.dishes.length} 条菜品/分类、${data.orders.length} 条订单数据，是否覆盖当前数据？`)) return;
+
+        // 清空旧数据
+        const oldDishes = await DB.getAll('dishes');
+        for (const d of oldDishes) await DB.delete('dishes', d.id);
+        const oldOrders = await DB.getAll('orders');
+        for (const o of oldOrders) await DB.delete('orders', o.id);
+
+        // 写入新数据
+        for (const d of data.dishes) await DB.put('dishes', d);
+        for (const o of data.orders) await DB.put('orders', o);
+
+        // 重置备份标记，下次自动备份
+        await DB.setMeta('lastBackupDate', '');
+
+        alert(`✅ 导入成功！${data.dishes.length} 条菜品/分类，${data.orders.length} 条订单`);
+        await this.loadDishes();
+        await this.loadOrders();
+        await this.loadReport();
+      } catch(e) {
+        alert('导入失败：文件格式错误或数据损坏\n' + e.message);
+      }
+      event.target.value = '';
+    },
+
     // ---- 订单队列 ----
     nextBtnLabel(status) {
       const map = { pending: '做菜', cooking: '上菜', done: '收款' };
@@ -407,6 +448,15 @@ const app = Vue.createApp({
     this.reportMonth = Utils.today().substring(0, 7);
     this.reportYear = parseInt(Utils.today().substring(0, 4));
     await DB.open();
+
+    // 每日自动备份
+    const lastBackup = await DB.getMeta('lastBackupDate');
+    if (lastBackup !== Utils.today()) {
+      try {
+        await Utils.exportData();
+        await DB.setMeta('lastBackupDate', Utils.today());
+      } catch(e) { /* 静默失败，不影响使用 */ }
+    }
     await Utils.initDefaultData();
     await this.loadDishes();
     await this.loadOrders();

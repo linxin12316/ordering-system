@@ -18,6 +18,7 @@
         <h1>📋 订单队列</h1>
         <div>
           <button class="btn btn-outline" style="font-size:12px;padding:4px 10px" @click="exportData">📤</button>
+          <button class="btn btn-outline" style="font-size:12px;padding:4px 10px" @click="importData">📥</button>
         </div>
       </div>
       <div class="status-tabs">
@@ -289,6 +290,9 @@
         </div>
       </div>
     </div>
+
+    <!-- 隐藏的文件选择器（导入用） -->
+    <input type="file" ref="fileInput" accept=".json" @change="onFileSelected" style="display:none">
 
     <!-- ========== 口味选择弹窗 ========== -->
     <div class="modal-overlay" v-if="showFlavorPicker" @click.self="cancelFlavor">
