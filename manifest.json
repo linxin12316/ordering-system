@@ -1,0 +1,16 @@
+{
+  "name": "餐馆点餐系统",
+  "short_name": "点餐系统",
+  "description": "个人餐馆点餐管理工具",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#F5F5F5",
+  "theme_color": "#4A90D9",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='32' fill='%234A90D9'/%3E%3Ctext x='96' y='128' font-size='100' text-anchor='middle' fill='white'%3E🍽%3C/text%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}
