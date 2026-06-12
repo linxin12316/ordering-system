@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#4A90D9">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <title>点餐系统</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- ========== 订单队列 ========== -->
+    <div class="page" :class="{ active: page === 'queue' }">
+      <div class="header">
+        <h1>📋 订单队列</h1>
+        <div>
+          <button class="btn btn-outline" style="font-size:12px;padding:4px 10px" @click="exportData">📤</button>
+        </div>
+      </div>
+      <div class="status-tabs">
+        <span class="status-tab" :class="{ active: statusFilter === '' }" @click="statusFilter = ''">全部</span>
+        <span class="status-tab" :class="{ active: statusFilter === 'pending' }" @click="statusFilter = 'pending'">⏳ 待处理</span>
+        <span class="status-tab" :class="{ active: statusFilter === 'cooking' }" @click="statusFilter = 'cooking'">🔥 制作中</span>
+        <span class="status-tab" :class="{ active: statusFilter === 'done' }" @click="statusFilter = 'done'">✅ 已完成</span>
+        <span class="status-tab" :class="{ active: statusFilter === 'paid' }" @click="statusFilter = 'paid'">💰 已付款</span>
+      </div>
+      <div v-if="filteredOrders.length === 0" class="empty-state">暂无订单</div>
+      <div v-for="o in filteredOrders" :key="o.id" class="order-card card" :class="'status-' + o.status">
+        <div class="order-header">
+          <div>
+            <span class="order-number">#{{ String(o.orderNumber).padStart(3, '0') }}</span>
+            <span class="order-table" v-if="o.tableNote"> · {{ o.tableNote }}</span>
+          </div>
+          <span class="order-status">{{ statusLabel(o.status) }}</span>
+        </div>
+        <div class="order-items">
+          <div v-for="item in o.items" :key="item.dishId">
+            {{ item.name }}
+            <span v-if="item.flavor" style="color:var(--primary);font-size:12px"> · {{ item.flavor }}</span>
+            <template v-if="item.priceType === 'per_jin'">{{ item.weight }}斤</template>
+            <template v-else>×{{ item.quantity }}</template>
+            ￥{{ item.subtotal.toFixed(2) }}
+          </div>
+        </div>
+        <div class="order-footer">
+          <div>
+            <span class="order-total">¥{{ o.totalAmount.toFixed(2) }}</span>
+            <span class="order-time" style="margin-left:8px">{{ o.createdAt?.split(' ')[1] }}</span>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button v-if="o.status !== 'paid'" class="btn btn-primary" style="padding:6px 14px;font-size:13px"
+                    @click="advanceOrder(o.id)">{{ nextBtnLabel(o.status) }}</button>
+            <button v-if="o.status === 'pending' || o.status === 'cooking'" class="btn btn-outline" style="padding:6px 10px;font-size:12px"
+                    @click="startAddItems(o)">加菜</button>
+            <button class="btn btn-danger" style="padding:6px 10px;font-size:12px"
+                    @click="deleteOrder(o.id)">✕</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 菜单管理 ========== -->
+    <div class="page" :class="{ active: page === 'menu' }">
+      <div class="header">
+        <h1>📝 菜单管理</h1>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-outline" style="padding:6px 12px;font-size:13px" @click="showCatManager = true">分类</button>
+          <button class="btn btn-primary" style="padding:6px 14px;font-size:13px" @click="openAddDish">+ 菜品</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+        <span v-for="cat in categories" :key="cat.id"
+              class="cat-tag" :class="{ active: menuActiveCat === cat.id }"
+              @click="menuActiveCat = cat.id">{{ cat.name }}</span>
+        <span style="font-size:11px;color:var(--text-light);align-self:center">已选: {{ menuActiveCat ? getCatName(menuActiveCat) : '全部' }}</span>
+      </div>
+      <div class="card" v-for="cat in menuFilteredCategories" :key="cat.id" style="padding:12px">
+        <div class="menu-group-title">{{ cat.name }}</div>
+        <div v-if="getCatDishes(cat.id).length === 0" style="text-align:center;padding:20px;color:var(--text-light);font-size:13px">
+          暂无菜品，点击右上角添加
+        </div>
+        <div v-for="dish in getCatDishes(cat.id)" :key="dish.id" class="dish-item" @click="openEditDish(dish)">
+          <div class="dish-info">
+            <div class="dish-name">{{ dish.name }}</div>
+            <div class="dish-price">
+              {{ dish.priceType === 'per_jin' ? '¥' + dish.unitPrice + '/斤' : '¥' + dish.unitPrice + '/份' }}
+              <span v-if="!dish.available" style="color:var(--danger);margin-left:6px;font-size:12px">已下架</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span class="toggle-btn" :class="{ on: dish.available }" @click.stop="toggleDish(dish)">
+              {{ dish.available ? '上架' : '下架' }}
+            </span>
+            <button class="btn btn-danger" style="padding:4px 8px;font-size:12px" @click.stop="deleteDish(dish.id)">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 添加/编辑菜品弹窗 -->
+      <div class="modal-overlay" v-if="showDishForm" @click.self="closeDishForm">
+        <div class="modal">
+          <h3>{{ editingDish ? '编辑菜品' : '添加菜品' }}</h3>
+          <div class="form-group">
+            <label>分类</label>
+            <select class="form-select" v-model="form.categoryId">
+              <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>菜名</label>
+            <input class="form-input" v-model="form.name" placeholder="输入菜名">
+          </div>
+          <div class="form-group">
+            <label>计价方式</label>
+            <select class="form-select" v-model="form.priceType">
+              <option value="per_serving">按份</option>
+              <option value="per_jin">按斤</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>{{ form.priceType === 'per_jin' ? '每斤价格 (元)' : '单价 (元)' }}</label>
+            <input class="form-input" type="number" v-model.number="form.unitPrice" placeholder="0" step="1" min="0">
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-outline" @click="closeDishForm">取消</button>
+            <button class="btn btn-primary" @click="saveDish">保存</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 管理分类弹窗 -->
+      <div class="modal-overlay" v-if="showCatManager" @click.self="showCatManager=false">
+        <div class="modal">
+          <h3>管理分类</h3>
+          <div v-for="cat in categories" :key="cat.id" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+            <span style="flex:1;font-size:14px">{{ cat.name }}</span>
+            <input class="form-input" style="flex:2;padding:6px;font-size:13px"
+                   :value="cat.name" @change="renameCat(cat.id, $event.target.value)">
+            <button v-if="canDeleteCat(cat.id)" class="btn btn-danger" style="padding:4px 8px;font-size:12px"
+                    @click="deleteCat(cat.id)">✕</button>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <input class="form-input" v-model="newCatName" placeholder="新分类名" style="font-size:14px">
+            <button class="btn btn-primary" @click="addCat">添加</button>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-outline" @click="showCatManager=false">关闭</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 新建订单 ========== -->
+    <div class="page" :class="{ active: page === 'order' }">
+      <div class="header">
+        <button class="btn btn-outline" style="padding:6px 12px;font-size:13px" @click="cancelOrder">← 返回</button>
+        <h1 v-if="!addItemsToOrderId">📝 新建订单</h1>
+        <h1 v-else style="color:var(--warning)">📝 为 #{{ String(getAddingOrderNum()).padStart(3, '0') }} 加菜</h1>
+        <div style="width:60px"></div>
+      </div>
+      <div class="form-group">
+        <input class="form-input" v-model="orderTableNote" placeholder="桌号/备注（如：3号桌）" style="font-size:16px">
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        <span v-for="cat in categories" :key="cat.id"
+              class="cat-tag" :class="{ active: orderActiveCat === cat.id }"
+              @click="orderActiveCat = cat.id">{{ cat.name }}</span>
+      </div>
+      <div class="card" v-for="cat in orderFilteredCategories" :key="cat.id" style="padding:12px">
+        <div class="menu-group-title">{{ cat.name }}</div>
+        <div v-for="dish in getAvailDishes(cat.id)" :key="dish.id" class="dish-item">
+          <div class="dish-info">
+            <div class="dish-name">{{ dish.name }}</div>
+            <div class="dish-price">
+              {{ dish.priceType === 'per_jin' ? '¥' + dish.unitPrice + '/斤' : '¥' + dish.unitPrice + '/份' }}
+            </div>
+          </div>
+          <button class="dish-add-btn" @click="addToCart(dish)">+</button>
+        </div>
+      </div>
+      <div class="card cart-section" v-if="orderCart.length > 0">
+        <div style="font-weight:600;margin-bottom:6px">🛒 已选菜品</div>
+        <div v-for="(item, idx) in orderCart" :key="item.dishId + '_' + idx" class="cart-item">
+          <div>
+            <div>{{ item.name }} <span v-if="item.flavor" style="color:var(--primary);font-size:12px">·{{ item.flavor }}</span></div>
+            <div style="font-size:12px;color:var(--text-light)">
+              <template v-if="item.priceType === 'per_jin'">
+                斤数：
+                <input type="number" v-model.number="item.weight" step="0.5" min="0.1"
+                       style="width:65px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;text-align:center;font-size:14px"
+                       @input="recalcItem(item)">
+              </template>
+              <template v-else>
+                <button style="border:none;background:none;font-size:16px;cursor:pointer;padding:0 6px" @click="changeQty(item, -1)">−</button>
+                {{ item.quantity }}
+                <button style="border:none;background:none;font-size:16px;cursor:pointer;padding:0 6px" @click="changeQty(item, 1)">+</button>
+              </template>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-weight:600">¥{{ item.subtotal.toFixed(2) }}</div>
+            <button style="border:none;color:var(--danger);font-size:12px;cursor:pointer" @click="removeItem(idx)">删除</button>
+          </div>
+        </div>
+        <div class="cart-total">
+          <span>合计</span>
+          <span class="amount">¥{{ orderCartTotal.toFixed(2) }}</span>
+        </div>
+        <button class="btn btn-primary" style="width:100%;padding:12px;font-size:16px" @click="submitOrder">
+          {{ addItemsToOrderId ? '📝 确认加菜' : '📝 确认下单' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- ========== 报表（日报/周报/月报/年报） ========== -->
+    <div class="page" :class="{ active: page === 'report' }">
+      <div class="header">
+        <h1>📊 报表</h1>
+        <button class="btn btn-outline" style="padding:6px 12px;font-size:13px" @click="exportData">📤 导出</button>
+      </div>
+
+      <!-- 周期切换 -->
+      <div class="status-tabs" style="margin-bottom:10px">
+        <span class="status-tab" :class="{ active: reportPeriod === 'day' }" @click="switchPeriod('day')">日报</span>
+        <span class="status-tab" :class="{ active: reportPeriod === 'week' }" @click="switchPeriod('week')">周报</span>
+        <span class="status-tab" :class="{ active: reportPeriod === 'month' }" @click="switchPeriod('month')">月报</span>
+        <span class="status-tab" :class="{ active: reportPeriod === 'year' }" @click="switchPeriod('year')">年报</span>
+      </div>
+
+      <!-- 日期选择 -->
+      <div class="form-group">
+        <input v-if="reportPeriod === 'day'" class="form-input" type="date" v-model="reportDate" @change="loadReport">
+        <input v-if="reportPeriod === 'week'" class="form-input" type="date" v-model="reportDate" @change="loadReport">
+        <input v-if="reportPeriod === 'month'" class="form-input" type="month" v-model="reportMonth" @change="loadReport">
+        <input v-if="reportPeriod === 'year'" class="form-input" type="number" v-model.number="reportYear" :min="2020" :max="2099" @change="loadReport" style="font-size:18px;font-weight:600">
+      </div>
+
+      <!-- 周期范围显示 -->
+      <div style="text-align:center;font-size:13px;color:var(--text-light);margin-bottom:8px">
+        <template v-if="reportPeriod === 'day'">{{ reportDate }}</template>
+        <template v-if="reportPeriod === 'week'">{{ weekRangeText }}</template>
+        <template v-if="reportPeriod === 'month'">{{ reportMonth }}</template>
+        <template v-if="reportPeriod === 'year'">{{ reportYear }}年</template>
+      </div>
+
+      <!-- 统计卡片 -->
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div class="stat-label">总订单</div>
+          <div class="stat-number blue">{{ reportStats.total }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">已付款</div>
+          <div class="stat-number green">{{ reportStats.paid }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">已完成</div>
+          <div class="stat-number">{{ reportStats.done }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">营业额</div>
+          <div class="stat-number red">¥{{ reportStats.revenue.toFixed(2) }}</div>
+        </div>
+      </div>
+
+      <!-- 订单明细 -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <h3 style="font-size:15px">订单明细</h3>
+        <span style="font-size:12px;color:var(--text-light)">{{ reportOrders.length }} 单</span>
+      </div>
+      <div v-if="reportOrders.length === 0" class="empty-state">暂无订单</div>
+      <div v-for="o in reportOrders" :key="o.id" class="card" style="padding:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <span style="font-weight:600">#{{ String(o.orderNumber).padStart(3, '0') }}</span>
+            <span v-if="o.tableNote" style="font-size:13px;color:var(--text-light);margin-left:4px">{{ o.tableNote }}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-weight:700;font-size:16px;color:var(--danger)">¥{{ o.totalAmount.toFixed(2) }}</span>
+            <span style="font-size:11px;padding:1px 6px;border-radius:3px;background:var(--bg)">{{ statusLabel(o.status) }}</span>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-light);margin-top:4px;display:flex;justify-content:space-between">
+          <span>下单 {{ o.createdAt }}</span>
+          <span v-if="o.paidAt" style="color:var(--success)">付款 {{ o.paidAt }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 口味选择弹窗 ========== -->
+    <div class="modal-overlay" v-if="showFlavorPicker" @click.self="cancelFlavor">
+      <div class="modal">
+        <h3>选择口味：{{ pendingFlavorDish?.name }}</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0">
+          <div v-for="opt in flavorOptions" :key="opt.value"
+               class="cat-tag" :class="{ active: selectedFlavor === opt.value }"
+               @click="selectedFlavor = opt.value"
+               style="padding:12px 8px;text-align:center;font-size:14px;justify-content:center">
+            {{ opt.label }}
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" @click="cancelFlavor">不备注</button>
+          <button class="btn btn-primary" @click="confirmFlavor">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部导航 -->
+    <nav class="bottom-nav">
+      <button :class="{ active: page === 'queue' }" @click="page='queue'">
+        <span class="nav-icon">📋</span>订单
+      </button>
+      <button :class="{ active: page === 'menu' }" @click="page='menu'">
+        <span class="nav-icon">📝</span>菜单
+      </button>
+      <button :class="{ active: page === 'report' }" @click="page='report'">
+        <span class="nav-icon">📊</span>报表
+      </button>
+    </nav>
+
+    <button class="fab" @click="page='order'" v-show="page !== 'order'">+</button>
+  </div>
+
+  <script src="js/db.js?v=2"></script>
+  <script src="js/utils.js?v=2"></script>
+  <script src="js/app.js?v=2"></script>
+</body>
+</html>
