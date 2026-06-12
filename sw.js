@@ -1,26 +1,7 @@
-// sw.js — Service Worker
-const CACHE_NAME = 'ordering-system-v3';
-const urlsToCache = [
-  'index.html',
-  'css/style.css',
-  'js/vue.global.js',
-  'js/db.js',
-  'js/utils.js',
-  'js/app.js'
-];
+// sw.js — Service Worker（网络优先，离线回退缓存）
+const CACHE_NAME = 'ordering-system-v4';
 
-self.addEventListener('install', (e) => {
-  self.skipWaiting();
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
-  );
-});
-
-self.addEventListener('fetch', (e) => {
-  e.respondWith(
-    caches.match(e.request).then(response => response || fetch(e.request))
-  );
-});
+self.addEventListener('install', () => self.skipWaiting());
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
@@ -30,5 +11,16 @@ self.addEventListener('activate', (e) => {
       )),
       self.clients.claim()
     ])
+  );
+});
+
+self.addEventListener('fetch', (e) => {
+  e.respondWith(
+    fetch(e.request).then(res => {
+      // 网络成功 → 存入缓存供离线使用
+      const clone = res.clone();
+      caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+      return res;
+    }).catch(() => caches.match(e.request))
   );
 });
