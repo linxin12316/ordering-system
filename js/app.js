@@ -31,6 +31,7 @@ const app = Vue.createApp({
       showFlavorPicker: false,
       selectedFlavor: '',
       pendingFlavorDish: null,
+      pendingWeight: 1,
       flavorOptions: [
         { value: '酸汤', label: '酸汤' },
         { value: '青椒', label: '青椒' },
@@ -270,7 +271,7 @@ const app = Vue.createApp({
     },
     async saveDish() {
       if (!this.form.name.trim()) { alert('请输入菜名'); return; }
-      if (!this.form.unitPrice || this.form.unitPrice <= 0) { alert('请输入有效价格'); return; }
+      if (this.form.unitPrice === '' || this.form.unitPrice === null || isNaN(this.form.unitPrice)) { alert('请输入有效价格'); return; }
       const dish = this.editingDish ? { ...this.editingDish } : {
         id: Utils.genId(), _type: 'dish', available: true, createdAt: Utils.now()
       };
@@ -316,6 +317,7 @@ const app = Vue.createApp({
       if (dish.categoryId === 'cat_main') {
         this.pendingFlavorDish = dish;
         this.selectedFlavor = '';
+        this.pendingWeight = 1;
         this.showFlavorPicker = true;
         return;
       }
@@ -358,29 +360,35 @@ const app = Vue.createApp({
     confirmFlavor() {
       const dish = this.pendingFlavorDish;
       if (!dish) return;
+      // 按斤计价时校验斤数
+      if (dish.priceType === 'per_jin' && (!this.pendingWeight || this.pendingWeight <= 0)) {
+        alert('请输入有效斤数'); return;
+      }
+      const weight = this.pendingWeight || 1;
       // 同菜品+同口味累加，不同口味分开
       const sameItem = this.orderCart.find(
         item => item.dishId === dish.id && item.flavor === (this.selectedFlavor || '')
       );
       if (sameItem) {
         if (sameItem.priceType === 'per_jin') {
-          sameItem.weight = (sameItem.weight || 0) + 1;
+          sameItem.weight = (sameItem.weight || 0) + weight;
         } else {
-          sameItem.quantity = (sameItem.quantity || 0) + 1;
+          sameItem.quantity = (sameItem.quantity || 0) + weight;
         }
         this.recalcItem(sameItem);
       } else {
         this.orderCart.push({
           dishId: dish.id, name: dish.name, categoryId: dish.categoryId,
           priceType: dish.priceType, unitPrice: dish.unitPrice,
-          quantity: dish.priceType === 'per_jin' ? 0 : 1,
-          weight: dish.priceType === 'per_jin' ? 1 : 0,
-          subtotal: dish.unitPrice,
+          quantity: dish.priceType === 'per_jin' ? 0 : weight,
+          weight: dish.priceType === 'per_jin' ? weight : 0,
+          subtotal: dish.unitPrice * weight,
           flavor: this.selectedFlavor || ''
         });
       }
       this.showFlavorPicker = false;
       this.pendingFlavorDish = null;
+      this.pendingWeight = 1;
     },
     cancelFlavor() {
       this.showFlavorPicker = false;

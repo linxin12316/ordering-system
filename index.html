@@ -435,6 +435,11 @@
     <div class="modal-overlay" v-if="showFlavorPicker" @click.self="cancelFlavor">
       <div class="modal">
         <h3>选择口味：{{ pendingFlavorDish?.name }}</h3>
+        <div v-if="pendingFlavorDish?.priceType === 'per_jin'" class="form-group" style="margin-top:12px">
+          <label style="font-weight:600">斤数</label>
+          <input class="form-input" type="number" v-model.number="pendingWeight" step="0.5" min="0.1"
+                 style="font-size:18px;padding:10px;text-align:center" placeholder="输入斤数">
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0">
           <div v-for="opt in flavorOptions" :key="opt.value"
                class="cat-tag" :class="{ active: selectedFlavor === opt.value }"
