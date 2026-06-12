@@ -45,8 +45,7 @@ const app = Vue.createApp({
       purchaseCateId: '',
       purchaseAmount: '',
       purchaseNote: '',
-      purchaseFilterDate: '',
-      purchaseDateTotal: 0,
+      purchaseFilterMonth: '',
 
       // === 采购分类管理 ===
       showPurchaseCatManager: false,
@@ -111,9 +110,21 @@ const app = Vue.createApp({
 
     // ---- 采购 ----
     filteredPurchaseList() {
-      if (!this.purchaseFilterDate) return [];
-      return this.purchases.filter(p => p.date === this.purchaseFilterDate)
-        .sort((a, b) => (a.createdAt || '') > (b.createdAt || '') ? 1 : -1);
+      if (!this.purchaseFilterMonth) return [];
+      const prefix = this.purchaseFilterMonth;
+      return this.purchases.filter(p => p.date && p.date.startsWith(prefix))
+        .sort((a, b) => a.date > b.date ? -1 : (a.date < b.date ? 1 : 0));
+    },
+    purchaseMonthTotal() {
+      return this.filteredPurchaseList.reduce((s, p) => s + (p.amount || 0), 0);
+    },
+    purchaseMonthCats() {
+      const map = {};
+      for (const p of this.filteredPurchaseList) {
+        const name = this.purchaseCatName(p.categoryId);
+        map[name] = (map[name] || 0) + (p.amount || 0);
+      }
+      return map;
     },
     purchaseCatName() {
       return (id) => {
@@ -512,17 +523,11 @@ const app = Vue.createApp({
       this.purchaseAmount = '';
       this.purchaseNote = '';
       await this.loadPurchases();
-      this.calcPurchaseDateTotal();
     },
     async deletePurchase(id) {
       if (!confirm('确定删除此采购记录？')) return;
       await DB.delete('purchases', id);
       await this.loadPurchases();
-      this.calcPurchaseDateTotal();
-    },
-    calcPurchaseDateTotal() {
-      const list = this.purchases.filter(p => p.date === this.purchaseFilterDate);
-      this.purchaseDateTotal = list.reduce((s, p) => s + (p.amount || 0), 0);
     },
 
     // ---- 利润分析 ----
@@ -654,7 +659,8 @@ const app = Vue.createApp({
     this.reportMonth = Utils.today().substring(0, 7);
     this.reportYear = parseInt(Utils.today().substring(0, 4));
     this.purchaseDate = Utils.today();
-    this.purchaseFilterDate = Utils.today();
+    this.purchaseFilterMonth = Utils.today().substring(0, 7);
+    this.profitPeriod = 'month';
     this.profitDate = Utils.today();
     this.profitMonth = Utils.today().substring(0, 7);
     this.profitYear = parseInt(Utils.today().substring(0, 4));
@@ -674,16 +680,14 @@ const app = Vue.createApp({
     await this.loadPurchaseCategories();
     await this.loadPurchases();
     await this.loadReport();
-    this.calcPurchaseDateTotal();
 
     this.$watch('page', async (newVal) => {
       if (newVal === 'queue') { await this.loadOrders(); }
       if (newVal === 'report') { await this.loadReport(); }
       if (newVal === 'purchase') {
-        this.purchaseFilterDate = Utils.today();
-        this.calcPurchaseDateTotal();
+        this.purchaseFilterMonth = Utils.today().substring(0, 7);
       }
-      if (newVal === 'profit') { this.loadProfit(); }
+      if (newVal === 'profit') { this.profitPeriod = 'month'; this.loadProfit(); }
       if (newVal === 'order' && !this.addItemsToOrderId) {
         this.orderCart = [];
         this.orderTableNote = '';

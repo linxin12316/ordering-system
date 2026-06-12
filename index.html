@@ -326,18 +326,30 @@
         <button class="btn btn-primary" style="width:100%;margin-top:10px;padding:10px;font-size:15px" @click="addPurchase">+ 添加采购记录</button>
       </div>
 
-      <!-- 今日采购清单 -->
+      <!-- 本月采购清单 -->
       <div style="display:flex;align-items:center;gap:8px;margin:14px 0 8px">
-        <input class="form-input" type="date" v-model="purchaseFilterDate" @change="calcPurchaseDateTotal" style="width:auto;font-size:14px;padding:6px 8px;display:inline-block">
+        <input class="form-input" type="month" v-model="purchaseFilterMonth" style="width:auto;font-size:14px;padding:6px 8px;display:inline-block">
         <span style="font-size:14px;color:var(--text-light);margin-left:auto">
-          合计: <strong style="color:var(--danger);font-size:18px">¥{{ purchaseDateTotal.toFixed(2) }}</strong>
+          月合计: <strong style="color:var(--danger);font-size:18px">¥{{ purchaseMonthTotal.toFixed(2) }}</strong>
         </span>
       </div>
+
+      <!-- 品类汇总 -->
+      <div v-if="Object.keys(purchaseMonthCats).length > 0" class="card" style="padding:12px">
+        <div style="font-weight:600;font-size:14px;margin-bottom:8px">📊 品类汇总</div>
+        <div v-for="(total, catName) in purchaseMonthCats" :key="catName" style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px;border-bottom:1px solid var(--border)">
+          <span>{{ catName }}</span>
+          <span style="font-weight:600;color:var(--danger)">¥{{ total.toFixed(2) }}</span>
+        </div>
+      </div>
+
+      <!-- 逐条记录 -->
       <div v-if="filteredPurchaseList.length === 0" class="empty-state">暂无采购记录</div>
       <div v-for="p in filteredPurchaseList" :key="p.id" class="card" style="padding:10px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:12px;color:var(--text-light);min-width:48px">{{ p.date ? p.date.slice(5) : '' }}</span>
         <span class="cat-tag" style="font-size:12px;padding:3px 10px;background:var(--primary);color:white;border:none">{{ purchaseCatName(p.categoryId) }}</span>
         <span style="font-size:18px;font-weight:700;color:var(--danger);margin-right:auto">¥{{ (p.amount || 0).toFixed(2) }}</span>
-        <span v-if="p.note" style="font-size:12px;color:var(--text-light);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.note }}</span>
+        <span v-if="p.note" style="font-size:12px;color:var(--text-light);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.note }}</span>
         <button class="btn btn-danger" style="padding:4px 8px;font-size:12px" @click="deletePurchase(p.id)">✕</button>
       </div>
     </div>
