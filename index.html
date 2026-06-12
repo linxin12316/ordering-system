@@ -38,7 +38,7 @@
           <span class="order-status">{{ statusLabel(o.status) }}</span>
         </div>
         <div class="order-items">
-          <div v-for="item in sortItems(o.items)" :key="item.dishId">
+          <div v-for="item in o.items" :key="item.dishId">
             {{ item.name }}
             <span v-if="item.flavor" style="color:var(--primary);font-size:12px"> · {{ item.flavor }}</span>
             <template v-if="item.priceType === 'per_jin'">{{ item.weight }}斤</template>

@@ -157,17 +157,6 @@ const app = Vue.createApp({
       await this.loadOrders();
     },
 
-    sortItems(items) {
-      if (!items || !items.length) return [];
-      // 按 category 排序，同类排一起
-      const catOrder = ['cat_main', 'cat_fry', 'cat_side', 'cat_drink', 'cat_other'];
-      return [...items].sort((a, b) => {
-        const ai = catOrder.indexOf(a.categoryId);
-        const bi = catOrder.indexOf(b.categoryId);
-        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-      });
-    },
-
     async loadOrders() {
       this.orders = await DB.getAll('orders');
       this.orders.sort((a, b) => (b.createdAt || '') > (a.createdAt || '') ? 1 : -1);
@@ -373,7 +362,23 @@ const app = Vue.createApp({
         if (this.addItemsToOrderId) {
           const order = this.orders.find(o => o.id === this.addItemsToOrderId);
           if (!order) { alert('订单不存在'); return; }
-          order.items.push(...items);
+          // 加菜合并：同菜品+同口味累加，不同口味新增
+          for (const newItem of items) {
+            const same = order.items.find(
+              i => i.dishId === newItem.dishId && (i.flavor || '') === (newItem.flavor || '')
+            );
+            if (same) {
+              if (same.priceType === 'per_jin') {
+                same.weight = (same.weight || 0) + (newItem.weight || 0);
+                same.subtotal = same.unitPrice * same.weight;
+              } else {
+                same.quantity = (same.quantity || 0) + (newItem.quantity || 0);
+                same.subtotal = same.unitPrice * same.quantity;
+              }
+            } else {
+              order.items.push(newItem);
+            }
+          }
           order.totalAmount = Math.round(order.items.reduce((sum, i) => sum + i.subtotal, 0) * 100) / 100;
           order._addItems = true;
           order.updatedAt = Utils.now();
