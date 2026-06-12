@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.json">
   <title>点餐系统</title>
   <link rel="stylesheet" href="css/style.css?v=4">
-  <script src="js/vue.global.js"></script>
+  <script src="js/vue.global.js?v=4"></script>
 </head>
 <body>
   <div id="app">
@@ -38,7 +38,7 @@
           <span class="order-status">{{ statusLabel(o.status) }}</span>
         </div>
         <div class="order-items">
-          <div v-for="item in o.items" :key="item.dishId">
+          <div v-for="(item, idx) in o.items" :key="item.dishId + '_' + (item.flavor || '') + '_' + idx">
             {{ item.name }}
             <span v-if="item.flavor" style="color:var(--primary);font-size:12px"> · {{ item.flavor }}</span>
             <template v-if="item.priceType === 'per_jin'">{{ item.weight }}斤</template>

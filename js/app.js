@@ -183,7 +183,8 @@ const app = Vue.createApp({
         // 重置备份标记，下次自动备份
         await DB.setMeta('lastBackupDate', '');
 
-        alert(`✅ 导入成功！${data.dishes.length} 条菜品/分类，${data.orders.length} 条订单`);
+        const purCount = data.purchases ? data.purchases.length : 0;
+        alert(`✅ 导入成功！${data.dishes.length} 条菜品/分类，${data.orders.length} 条订单，${purCount} 条采购记录`);
         await this.loadDishes();
         await this.loadOrders();
         await this.loadPurchases();
