@@ -434,10 +434,13 @@ const app = Vue.createApp({
       }
       this.reportOrders = filtered.sort((a, b) => ((a.createdAt || '') > (b.createdAt || '') ? -1 : 1));
       const paidOrders = this.reportOrders.filter(o => o.status === 'paid');
+      const doneOrders = this.reportOrders.filter(o => o.status === 'done');
+      const activeOrders = this.reportOrders.filter(o => o.status === 'pending' || o.status === 'cooking');
       this.reportStats = {
         total: this.reportOrders.length,
         paid: paidOrders.length,
-        done: this.reportOrders.filter(o => o.status === 'done').length,
+        done: doneOrders.length + paidOrders.length,
+        active: activeOrders.length,
         revenue: paidOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0)
       };
     }
