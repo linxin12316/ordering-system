@@ -58,27 +58,81 @@ const Utils = {
   ],
 
   defaultDishes: [
-    { categoryId: 'cat_main', name: '连鱼', priceType: 'per_jin', unitPrice: 38 },
-    { categoryId: 'cat_main', name: '鲤鱼', priceType: 'per_jin', unitPrice: 25 },
-    { categoryId: 'cat_main', name: '草鱼', priceType: 'per_jin', unitPrice: 28 },
-    { categoryId: 'cat_main', name: '鸡', priceType: 'per_jin', unitPrice: 35 },
-    { categoryId: 'cat_side', name: '豆腐', priceType: 'per_serving', unitPrice: 12 },
+    { categoryId: 'cat_main', name: '连鱼', priceType: 'per_jin', unitPrice: 60 },
+    { categoryId: 'cat_main', name: '鲤鱼', priceType: 'per_jin', unitPrice: 50 },
+    { categoryId: 'cat_main', name: '草鱼', priceType: 'per_jin', unitPrice: 50 },
+    { categoryId: 'cat_main', name: '鸡', priceType: 'per_jin', unitPrice: 60 },
     { categoryId: 'cat_side', name: '白菜', priceType: 'per_serving', unitPrice: 8 },
-    { categoryId: 'cat_side', name: '土豆', priceType: 'per_serving', unitPrice: 10 }
+    { categoryId: 'cat_side', name: '豆腐', priceType: 'per_serving', unitPrice: 10 },
+    { categoryId: 'cat_side', name: '土豆', priceType: 'per_serving', unitPrice: 8 },
+    { categoryId: 'cat_side', name: '虾', priceType: 'per_serving', unitPrice: 40 },
+    { categoryId: 'cat_fry', name: '炒西红柿', priceType: 'per_serving', unitPrice: 15 },
+    { categoryId: 'cat_fry', name: '西红柿炒鸡蛋', priceType: 'per_serving', unitPrice: 15 },
+    { categoryId: 'cat_fry', name: '蛋炒饭', priceType: 'per_serving', unitPrice: 10 },
+    { categoryId: 'cat_drink', name: '雪花', priceType: 'per_serving', unitPrice: 4 },
+    { categoryId: 'cat_drink', name: '雪花', priceType: 'per_serving', unitPrice: 66 },
+    { categoryId: 'cat_drink', name: '矿泉水', priceType: 'per_serving', unitPrice: 2 },
+    { categoryId: 'cat_drink', name: '冰糖雪梨', priceType: 'per_serving', unitPrice: 4 },
+    { categoryId: 'cat_drink', name: '红牛', priceType: 'per_serving', unitPrice: 6 },
+    { categoryId: 'cat_drink', name: '白酒', priceType: 'per_jin', unitPrice: 25 },
+    { categoryId: 'cat_drink', name: '大可乐', priceType: 'per_serving', unitPrice: 10 },
+    { categoryId: 'cat_drink', name: '椰子奶', priceType: 'per_serving', unitPrice: 18 },
+    { categoryId: 'cat_drink', name: '苏打水', priceType: 'per_serving', unitPrice: 3 },
+    { categoryId: 'cat_drink', name: '水溶CCOO', priceType: 'per_serving', unitPrice: 6 },
+    { categoryId: 'cat_drink', name: 'C维他命水', priceType: 'per_serving', unitPrice: 6 },
+    { categoryId: 'cat_drink', name: '东方树叶', priceType: 'per_serving', unitPrice: 6 },
+    { categoryId: 'cat_drink', name: '茶π（大）', priceType: 'per_serving', unitPrice: 8 },
+    { categoryId: 'cat_drink', name: '尖叫', priceType: 'per_serving', unitPrice: 5 },
+    { categoryId: 'cat_drink', name: '橙心橙意', priceType: 'per_serving', unitPrice: 18 },
+    { categoryId: 'cat_drink', name: '雪碧（小）', priceType: 'per_serving', unitPrice: 3 },
+    { categoryId: 'cat_drink', name: '可乐（小）', priceType: 'per_serving', unitPrice: 3 },
+    { categoryId: 'cat_drink', name: '芬达', priceType: 'per_serving', unitPrice: 4 },
+    { categoryId: 'cat_drink', name: '美汁源', priceType: 'per_serving', unitPrice: 4 },
+    { categoryId: 'cat_drink', name: '维生素C', priceType: 'per_serving', unitPrice: 5 },
+    { categoryId: 'cat_drink', name: '雪碧（罐装）', priceType: 'per_serving', unitPrice: 5 },
+    { categoryId: 'cat_drink', name: '芬达（罐装）', priceType: 'per_serving', unitPrice: 5 },
+    { categoryId: 'cat_drink', name: '雪碧（大）', priceType: 'per_serving', unitPrice: 10 },
+    { categoryId: 'cat_other', name: '蒸鱼（辣）', priceType: 'per_serving', unitPrice: 0 },
+    { categoryId: 'cat_other', name: '蒸鱼（不辣）', priceType: 'per_serving', unitPrice: 0 },
+    { categoryId: 'cat_other', name: '饭', priceType: 'per_serving', unitPrice: 3 }
   ],
 
   async initDefaultData() {
+    // 首次初始化 — 新建用户
     const inited = await DB.getMeta('data_inited');
-    if (inited) return;
-    for (const cat of this.defaultCategories) {
-      await DB.put('dishes', { ...cat, _type: 'category' });
+    if (!inited) {
+      for (const cat of this.defaultCategories) {
+        await DB.put('dishes', { ...cat, _type: 'category' });
+      }
+      for (const dish of this.defaultDishes) {
+        await DB.put('dishes', {
+          ...dish, id: this.genId(), available: true, _type: 'dish', createdAt: this.now()
+        });
+      }
+      await DB.setMeta('data_inited', true);
+      await DB.setMeta('menu_version', 2);
+      return;
     }
-    for (const dish of this.defaultDishes) {
-      await DB.put('dishes', {
-        ...dish, id: this.genId(), available: true, _type: 'dish', createdAt: this.now()
-      });
+
+    // 已有用户菜单迁移：version < 2 → 替换为备份数据
+    const menuVer = await DB.getMeta('menu_version');
+    if (!menuVer || menuVer < 2) {
+      // 删除现有所有菜品和分类（保留订单数据）
+      const all = await DB.getAll('dishes');
+      for (const d of all) {
+        await DB.delete('dishes', d.id);
+      }
+      // 重新插入备份的菜单
+      for (const cat of this.defaultCategories) {
+        await DB.put('dishes', { ...cat, _type: 'category' });
+      }
+      for (const dish of this.defaultDishes) {
+        await DB.put('dishes', {
+          ...dish, id: this.genId(), available: true, _type: 'dish', createdAt: this.now()
+        });
+      }
+      await DB.setMeta('menu_version', 2);
     }
-    await DB.setMeta('data_inited', true);
   },
 
   async exportData() {
