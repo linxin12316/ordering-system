@@ -435,7 +435,8 @@ const app = Vue.createApp({
       this.reportOrders = filtered.sort((a, b) => ((a.createdAt || '') > (b.createdAt || '') ? -1 : 1));
       const paidOrders = this.reportOrders.filter(o => o.status === 'paid');
       const doneOrders = this.reportOrders.filter(o => o.status === 'done');
-      const activeOrders = this.reportOrders.filter(o => o.status === 'pending' || o.status === 'cooking');
+      // 营业中统计所有未完成的订单，不限定周期
+      const activeOrders = all.filter(o => o.status === 'pending' || o.status === 'cooking');
       this.reportStats = {
         total: this.reportOrders.length,
         paid: paidOrders.length,
