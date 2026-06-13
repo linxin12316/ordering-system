@@ -592,7 +592,8 @@ const app = Vue.createApp({
       dish.name = this.form.name.trim();
       dish.priceType = this.form.priceType;
       dish.unitPrice = Number(this.form.unitPrice);
-      dish.flavors = [...this.form.flavors];
+      // 非主菜不保存口味
+      dish.flavors = this.form.categoryId === 'cat_main' ? [...this.form.flavors] : [];
       await DB.put('dishes', dish);
       await Utils.saveLocalBackup();
       this.closeDishForm();
@@ -648,9 +649,8 @@ const app = Vue.createApp({
       return this.dishes.filter(d => d.categoryId === catId && d.available !== false);
     },
     addToCart(dish) {
-      // 有 flavors 配置则弹出口味选择(向下兼容:旧主菜没 flavors 字段时也弹)
-      const flavors = Array.isArray(dish.flavors) ? dish.flavors : [];
-      const needFlavor = flavors.length > 0 || dish.categoryId === 'cat_main';
+      // 仅主菜分类需要口味选择,其他分类一律直接加购
+      const needFlavor = dish.categoryId === 'cat_main';
       if (needFlavor) {
         this.pendingFlavorDish = dish;
         this.selectedFlavor = '';

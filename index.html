@@ -7,8 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="manifest" href="manifest.json">
   <title>点餐系统</title>
-  <link rel="stylesheet" href="css/style.css?v=8.1">
-  <script src="js/vue.global.js?v=8.1"></script>
+  <link rel="stylesheet" href="css/style.css?v=8.2">
+  <script src="js/vue.global.js?v=8.2"></script>
 </head>
 <body>
   <div id="app">
@@ -206,9 +206,9 @@
             <label>{{ form.priceType === 'per_jin' ? '每斤价格 (元)' : '单价 (元)' }}</label>
             <input class="form-input" type="number" v-model.number="form.unitPrice" placeholder="0" step="1" min="0">
           </div>
-          <!-- 口味设置 -->
-          <div class="form-group">
-            <label>口味选项 <span style="font-weight:normal;font-size:12px;color:var(--text-light)">(留空则下单时不弹口味)</span></label>
+          <!-- 口味设置：仅主菜分类显示 -->
+          <div class="form-group" v-if="form.categoryId === 'cat_main'">
+            <label>口味选项 <span style="font-weight:normal;font-size:12px;color:var(--text-light)">(仅主菜需要,下单时弹出选择)</span></label>
             <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
               <span v-for="(f, idx) in form.flavors" :key="f"
                     class="flavor-chip">
@@ -766,9 +766,9 @@
     <button class="fab no-print" @click="page='order'" v-show="page !== 'order' && page !== 'purchase'">+</button>
   </div>
 
-  <script src="js/vue.global.js?v=8.1"></script>
-  <script src="js/db.js?v=8.1"></script>
-  <script src="js/utils.js?v=8.1"></script>
-  <script src="js/app.js?v=8.1"></script>
+  <script src="js/vue.global.js?v=8.2"></script>
+  <script src="js/db.js?v=8.2"></script>
+  <script src="js/utils.js?v=8.2"></script>
+  <script src="js/app.js?v=8.2"></script>
 </body>
 </html>
