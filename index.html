@@ -7,8 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="manifest" href="manifest.json">
   <title>点餐系统</title>
-  <link rel="stylesheet" href="css/style.css?v=6">
-  <script src="js/vue.global.js?v=6"></script>
+  <link rel="stylesheet" href="css/style.css?v=7">
+  <script src="js/vue.global.js?v=7"></script>
 </head>
 <body>
   <div id="app">
@@ -21,14 +21,46 @@
           <button class="btn btn-outline" style="font-size:12px;padding:4px 10px" @click="importData">📥</button>
         </div>
       </div>
+
+      <!-- 日期切换栏 -->
+      <div class="date-bar">
+        <button class="date-nav-btn" @click="shiftQueueDate(-1)">‹</button>
+        <div class="date-bar-center">
+          <input class="date-bar-input" type="date" v-model="queueDate" :max="(new Date()).toISOString().slice(0,10)">
+          <span class="date-bar-label">{{ queueDateLabel() }}</span>
+        </div>
+        <button class="date-nav-btn" @click="shiftQueueDate(1)" :disabled="isQueueToday()" :class="{disabled: isQueueToday()}">›</button>
+        <button class="date-today-btn" v-if="!isQueueToday()" @click="shiftQueueDate(0)">回到今天</button>
+      </div>
+
+      <!-- 当日统计条 -->
+      <div class="day-stats">
+        <div class="day-stat-item" @click="statusFilter=''">
+          <div class="day-stat-num">{{ queueDayStats.total }}</div>
+          <div class="day-stat-lbl">总订单</div>
+        </div>
+        <div class="day-stat-item queue" @click="statusFilter='pending'">
+          <div class="day-stat-num" :class="{warn: queueDayStats.queueing > 0}">{{ queueDayStats.queueing }}</div>
+          <div class="day-stat-lbl">排队中</div>
+        </div>
+        <div class="day-stat-item" @click="statusFilter='done'">
+          <div class="day-stat-num green">{{ queueDayStats.done }}</div>
+          <div class="day-stat-lbl">待收款</div>
+        </div>
+        <div class="day-stat-item" @click="statusFilter='paid'">
+          <div class="day-stat-num red">¥{{ queueDayStats.revenue.toFixed(0) }}</div>
+          <div class="day-stat-lbl">已收</div>
+        </div>
+      </div>
+
       <div class="status-tabs">
         <span class="status-tab" :class="{ active: statusFilter === '' }" @click="statusFilter = ''">全部</span>
-        <span class="status-tab" :class="{ active: statusFilter === 'pending' }" @click="statusFilter = 'pending'">⏳ 待处理</span>
-        <span class="status-tab" :class="{ active: statusFilter === 'cooking' }" @click="statusFilter = 'cooking'">🔥 制作中</span>
-        <span class="status-tab" :class="{ active: statusFilter === 'done' }" @click="statusFilter = 'done'">✅ 已完成</span>
-        <span class="status-tab" :class="{ active: statusFilter === 'paid' }" @click="statusFilter = 'paid'">💰 已付款</span>
+        <span class="status-tab" :class="{ active: statusFilter === 'pending' }" @click="statusFilter = 'pending'">⏳ 待处理 <em v-if="queueDayStats.pending">{{ queueDayStats.pending }}</em></span>
+        <span class="status-tab" :class="{ active: statusFilter === 'cooking' }" @click="statusFilter = 'cooking'">🔥 制作中 <em v-if="queueDayStats.cooking">{{ queueDayStats.cooking }}</em></span>
+        <span class="status-tab" :class="{ active: statusFilter === 'done' }" @click="statusFilter = 'done'">✅ 已完成 <em v-if="queueDayStats.done">{{ queueDayStats.done }}</em></span>
+        <span class="status-tab" :class="{ active: statusFilter === 'paid' }" @click="statusFilter = 'paid'">💰 已付款 <em v-if="queueDayStats.paid">{{ queueDayStats.paid }}</em></span>
       </div>
-      <div v-if="filteredOrders.length === 0" class="empty-state">暂无订单</div>
+      <div v-if="filteredOrders.length === 0" class="empty-state">{{ isQueueToday() ? '今日暂无订单' : queueDateLabel() + ' 没有订单' }}</div>
       <div v-for="o in filteredOrders" :key="o.id" class="order-card card" :class="'status-' + o.status">
         <div class="order-header">
           <div>
@@ -501,9 +533,9 @@
     <button class="fab" @click="page='order'" v-show="page !== 'order' && page !== 'purchase'">+</button>
   </div>
 
-  <script src="js/vue.global.js?v=6"></script>
-  <script src="js/db.js?v=6"></script>
-  <script src="js/utils.js?v=6"></script>
-  <script src="js/app.js?v=6"></script>
+  <script src="js/vue.global.js?v=7"></script>
+  <script src="js/db.js?v=7"></script>
+  <script src="js/utils.js?v=7"></script>
+  <script src="js/app.js?v=7"></script>
 </body>
 </html>

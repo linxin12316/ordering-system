@@ -5,6 +5,7 @@ const app = Vue.createApp({
       // 导航
       page: 'queue',
       statusFilter: '',
+      queueDate: '', // 订单队列当前查看日期，默认今日
 
       // 共享数据
       orders: [],
@@ -75,8 +76,27 @@ const app = Vue.createApp({
   computed: {
     // ---- 订单队列 ----
     filteredOrders() {
-      if (!this.statusFilter) return this.orders;
-      return this.orders.filter(o => o.status === this.statusFilter);
+      // 先按日期过滤
+      const dayOrders = this.queueDate
+        ? this.orders.filter(o => (o.createdAt || '').startsWith(this.queueDate))
+        : this.orders;
+      if (!this.statusFilter) return dayOrders;
+      return dayOrders.filter(o => o.status === this.statusFilter);
+    },
+
+    // 当日订单按状态分组的数量统计
+    queueDayStats() {
+      const dayOrders = this.queueDate
+        ? this.orders.filter(o => (o.createdAt || '').startsWith(this.queueDate))
+        : this.orders;
+      const stats = { total: dayOrders.length, pending: 0, cooking: 0, done: 0, paid: 0, revenue: 0 };
+      for (const o of dayOrders) {
+        if (stats[o.status] !== undefined) stats[o.status]++;
+        if (o.status === 'paid') stats.revenue += o.totalAmount || 0;
+      }
+      stats.queueing = stats.pending + stats.cooking; // 排队中=待处理+制作中
+      stats.revenue = Math.round(stats.revenue * 100) / 100;
+      return stats;
     },
 
     // ---- 菜单管理 ----
@@ -202,6 +222,34 @@ const app = Vue.createApp({
     nextBtnLabel(status) {
       const map = { pending: '做菜', cooking: '上菜', done: '收款' };
       return map[status] || '';
+    },
+    // 切换队列查看日期(delta:-1=前一天, 1=后一天, 0=今日)
+    shiftQueueDate(delta) {
+      if (delta === 0) {
+        this.queueDate = Utils.today();
+        return;
+      }
+      const d = new Date(this.queueDate || Utils.today());
+      d.setDate(d.getDate() + delta);
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      this.queueDate = `${d.getFullYear()}-${m}-${dd}`;
+    },
+    // 当日队列日期显示(今天/昨天/具体日期)
+    queueDateLabel() {
+      if (!this.queueDate) return '';
+      const today = Utils.today();
+      if (this.queueDate === today) return '今天';
+      const t = new Date(today);
+      t.setDate(t.getDate() - 1);
+      const yMm = String(t.getMonth() + 1).padStart(2, '0');
+      const yDd = String(t.getDate()).padStart(2, '0');
+      const yesterday = `${t.getFullYear()}-${yMm}-${yDd}`;
+      if (this.queueDate === yesterday) return '昨天';
+      return this.queueDate;
+    },
+    isQueueToday() {
+      return this.queueDate === Utils.today();
     },
     async advanceOrder(id) {
       try {
@@ -480,6 +528,7 @@ const app = Vue.createApp({
       this.addItemsToOrderId = null;
       this.orderCart = [];
       this.orderTableNote = '';
+      this.queueDate = Utils.today(); // 下单后自动切回今日,确保看到新单
       this.page = 'queue';
       await this.loadOrders();
     },
@@ -670,6 +719,7 @@ const app = Vue.createApp({
   },
 
   async mounted() {
+    this.queueDate = Utils.today();
     this.reportDate = Utils.today();
     this.reportMonth = Utils.today().substring(0, 7);
     this.reportYear = parseInt(Utils.today().substring(0, 4));
@@ -697,7 +747,9 @@ const app = Vue.createApp({
     await this.loadReport();
 
     this.$watch('page', async (newVal) => {
-      if (newVal === 'queue') { await this.loadOrders(); }
+      if (newVal === 'queue') {
+        await this.loadOrders();
+      }
       if (newVal === 'report') { await this.loadReport(); }
       if (newVal === 'purchase') {
         this.purchaseFilterMonth = Utils.today().substring(0, 7);
