@@ -5,7 +5,9 @@ const app = Vue.createApp({
       // 导航
       page: 'queue',
       statusFilter: '',
-      queueDate: '', // 订单队列当前查看日期，默认今日
+      queueDate: '',
+      // 时间刷新计数器（让 Vue 每分钟重算等待时长）
+      tick: 0,
 
       // 共享数据
       orders: [],
@@ -13,35 +15,50 @@ const app = Vue.createApp({
       categories: [],
       purchases: [],
       purchaseCategories: [],
+      tableTags: [],
 
       // === 菜单管理 ===
       menuSearch: '',
-      menuActiveCat: null,
+      menuActiveCat: null,        // null = 全部分类，'__hot__' = 热门
       showDishForm: false,
       showCatManager: false,
       editingDish: null,
       newCatName: '',
-      form: { categoryId: 'cat_main', name: '', priceType: 'per_serving', unitPrice: 0 },
+      form: {
+        categoryId: 'cat_main', name: '', priceType: 'per_serving', unitPrice: 0,
+        flavors: []
+      },
+      newFlavorInput: '',
 
-      // === 新建订w单 ===
+      // === 桌号标签管理 ===
+      showTableTagManager: false,
+      newTableTagInput: '',
+
+      // === 新建订单 ===
       orderActiveCat: null,
       orderTableNote: '',
       orderCart: [],
-      addItemsToOrderId: null,  // 非null表示给已有订单加菜
+      addItemsToOrderId: null,
 
       // === 口味选择 ===
       showFlavorPicker: false,
       selectedFlavor: '',
       pendingFlavorDish: null,
       pendingWeight: 1,
-      flavorOptions: [
-        { value: '酸汤', label: '酸汤' },
-        { value: '青椒', label: '青椒' },
-        { value: '清汤', label: '清汤' },
-        { value: '鸳鸯(酸汤+青椒)', label: '鸳鸯(酸汤+青椒)' },
-        { value: '鸳鸯(酸汤+清汤)', label: '鸳鸯(酸汤+清汤)' },
-        { value: '鸳鸯(青椒+清汤)', label: '鸳鸯(青椒+清汤)' },
-      ],
+
+      // === 收款弹框 ===
+      showPayDialog: false,
+      payOrderId: null,
+      payActualAmount: 0,
+      payNote: '',
+
+      // === 打印小票 ===
+      showPrintDialog: false,
+      printOrderId: null,
+
+      // === 安装提示 ===
+      installPrompt: null,
+      showInstallTip: false,
 
       // === 采购记录 ===
       purchaseDate: '',
@@ -49,58 +66,77 @@ const app = Vue.createApp({
       purchaseAmount: '',
       purchaseNote: '',
       purchaseFilterMonth: '',
-
-      // === 采购分类管理 ===
       showPurchaseCatManager: false,
       newPurchaseCatName: '',
 
-      // === 每日报表 ===
+      // === 报表 ===
       reportDate: '',
       reportPeriod: 'day',
       reportMonth: '',
       reportYear: 2026,
-      reportWeek: '',
       reportOrders: [],
-      reportStats: { total: 0, paid: 0, done: 0, revenue: 0 },
+      reportStats: { total: 0, paid: 0, done: 0, revenue: 0, active: 0 },
+      showDeletedOrders: false,
 
-      // === 利润分析 ===
+      // === 利润 ===
       profitPeriod: 'day',
       profitDate: '',
       profitMonth: '',
       profitYear: 2026,
       profitStats: { revenue: 0, cost: 0, profit: 0, profitRate: 0, orderCount: 0 },
-      profitDetails: []
+      profitDetails: [],
+
+      // === 文本备份/恢复 ===
+      showTextBackup: false,
+      textBackupContent: '',
+      textBackupMode: 'export', // export | import
     };
   },
 
   computed: {
     // ---- 订单队列 ----
-    filteredOrders() {
-      // 先按日期过滤
-      const dayOrders = this.queueDate
-        ? this.orders.filter(o => (o.createdAt || '').startsWith(this.queueDate))
-        : this.orders;
-      if (!this.statusFilter) return dayOrders;
-      return dayOrders.filter(o => o.status === this.statusFilter);
+    activeOrders() {
+      return this.orders.filter(o => !o.deleted);
     },
-
-    // 当日订单按状态分组的数量统计
+    filteredOrders() {
+      const day = this.queueDate
+        ? this.activeOrders.filter(o => (o.createdAt || '').startsWith(this.queueDate))
+        : this.activeOrders;
+      if (!this.statusFilter) return day;
+      return day.filter(o => o.status === this.statusFilter);
+    },
     queueDayStats() {
-      const dayOrders = this.queueDate
-        ? this.orders.filter(o => (o.createdAt || '').startsWith(this.queueDate))
-        : this.orders;
-      const stats = { total: dayOrders.length, pending: 0, cooking: 0, done: 0, paid: 0, revenue: 0 };
-      for (const o of dayOrders) {
+      const day = this.queueDate
+        ? this.activeOrders.filter(o => (o.createdAt || '').startsWith(this.queueDate))
+        : this.activeOrders;
+      const stats = { total: day.length, pending: 0, cooking: 0, done: 0, paid: 0, revenue: 0 };
+      for (const o of day) {
         if (stats[o.status] !== undefined) stats[o.status]++;
-        if (o.status === 'paid') stats.revenue += o.totalAmount || 0;
+        if (o.status === 'paid') stats.revenue += Utils.effectiveAmount(o);
       }
-      stats.queueing = stats.pending + stats.cooking; // 排队中=待处理+制作中
+      stats.queueing = stats.pending + stats.cooking;
       stats.revenue = Math.round(stats.revenue * 100) / 100;
       return stats;
     },
 
+    // 销量统计（最近30天）
+    dishSales30d() {
+      const since = Utils.shiftDate(Utils.today(), -30);
+      return Utils.computeDishSales(this.activeOrders, since);
+    },
+    // 热门菜品（按销售额降序，至少有1次销售）
+    hotDishes() {
+      const sales = this.dishSales30d;
+      return this.dishes
+        .filter(d => sales[d.id])
+        .map(d => ({ ...d, _sales: sales[d.id] }))
+        .sort((a, b) => b._sales.revenue - a._sales.revenue)
+        .slice(0, 20);
+    },
+
     // ---- 菜单管理 ----
     menuFilteredCategories() {
+      if (this.menuActiveCat === '__hot__') return [];
       return this.menuActiveCat
         ? this.categories.filter(c => c.id === this.menuActiveCat)
         : this.categories;
@@ -122,12 +158,45 @@ const app = Vue.createApp({
       const range = this.getWeekRange(this.reportDate);
       return `第${range.weekNum}周 (${range.start.replace('-','/')} - ${range.end.replace('-','/')})`;
     },
+    deletedOrdersOfPeriod() {
+      const period = this.getReportPeriodRange();
+      return this.orders.filter(o => {
+        if (!o.deleted) return false;
+        const d = (o.createdAt || '').substring(0, 10);
+        return d >= period.start && d <= period.end;
+      }).sort((a, b) => (a.createdAt || '') > (b.createdAt || '') ? -1 : 1);
+    },
 
     // ---- 利润 ----
     profitWeekRangeText() {
       if (!this.profitDate) return '';
       const range = this.getWeekRange(this.profitDate);
       return `第${range.weekNum}周 (${range.start.replace('-','/')} - ${range.end.replace('-','/')})`;
+    },
+
+    // ---- 报表图表数据 ----
+    last7DaysRevenue() {
+      const result = [];
+      for (let i = 6; i >= 0; i--) {
+        const date = Utils.shiftDate(Utils.today(), -i);
+        const dayOrders = this.activeOrders.filter(o =>
+          o.status === 'paid' && (o.createdAt || '').startsWith(date)
+        );
+        const revenue = dayOrders.reduce((s, o) => s + Utils.effectiveAmount(o), 0);
+        result.push({ date: date.slice(5), revenue: Math.round(revenue * 100) / 100 });
+      }
+      return result;
+    },
+    todayHourlyOrders() {
+      const today = Utils.today();
+      const buckets = Array(24).fill(0);
+      for (const o of this.activeOrders) {
+        if (!(o.createdAt || '').startsWith(today)) continue;
+        const hour = parseInt((o.createdAt || '').substring(11, 13)) || 0;
+        if (hour >= 0 && hour < 24) buckets[hour]++;
+      }
+      // 只显示 9:00-23:00
+      return buckets.slice(9, 24).map((cnt, i) => ({ hour: i + 9, count: cnt }));
     },
 
     // ---- 采购 ----
@@ -163,12 +232,12 @@ const app = Vue.createApp({
       const cat = this.categories.find(c => c.id === id);
       return cat ? cat.name : '';
     },
+    effectiveAmount(o) { return Utils.effectiveAmount(o); },
 
     async exportData() { await Utils.exportData(); },
 
     // ---- 数据导入 ----
     importData() {
-      // 触发文件选择
       const input = document.querySelector('input[type=file][accept=".json"]');
       if (input) input.click();
     },
@@ -177,45 +246,116 @@ const app = Vue.createApp({
       if (!file) return;
       try {
         const text = await file.text();
-        const data = JSON.parse(text);
-        if (!data.dishes || !data.orders) {
-          alert('格式错误：备份文件缺少 dishes 或 orders 数据');
-          return;
-        }
-        if (!confirm(`将导入 ${data.dishes.length} 条菜品/分类、${data.orders.length} 条订单、${data.purchases ? data.purchases.length : 0} 条采购记录，是否覆盖当前数据？`)) return;
-
-        // 清空旧数据
-        const oldDishes = await DB.getAll('dishes');
-        for (const d of oldDishes) await DB.delete('dishes', d.id);
-        const oldOrders = await DB.getAll('orders');
-        for (const o of oldOrders) await DB.delete('orders', o.id);
-        const oldPurchases = await DB.getAll('purchases');
-        for (const p of oldPurchases) await DB.delete('purchases', p.id);
-
-        // 写入新数据
-        for (const d of data.dishes) await DB.put('dishes', d);
-        for (const o of data.orders) await DB.put('orders', o);
-        if (data.purchases) {
-          for (const p of data.purchases) await DB.put('purchases', p);
-        }
-        if (data.purchaseCats) {
-          await DB.setMeta('purchaseCategories', data.purchaseCats);
-        }
-
-        // 重置备份标记，下次自动备份
-        await DB.setMeta('lastBackupDate', '');
-
-        const purCount = data.purchases ? data.purchases.length : 0;
-        alert(`✅ 导入成功！${data.dishes.length} 条菜品/分类，${data.orders.length} 条订单，${purCount} 条采购记录`);
-        await this.loadDishes();
-        await this.loadOrders();
-        await this.loadPurchases();
-        await this.loadPurchaseCategories();
-        await this.loadReport();
+        await this.applyImportPayload(text);
       } catch(e) {
         alert('导入失败：文件格式错误或数据损坏\n' + e.message);
       }
       event.target.value = '';
+    },
+    async applyImportPayload(text) {
+      const data = JSON.parse(text);
+      if (!data.dishes || !data.orders) {
+        alert('格式错误：备份数据缺少 dishes 或 orders 字段');
+        return;
+      }
+      if (!confirm(`将导入 ${data.dishes.length} 条菜品/分类、${data.orders.length} 条订单、${data.purchases ? data.purchases.length : 0} 条采购记录，是否覆盖当前数据？`)) return;
+
+      // 清空旧数据
+      const oldDishes = await DB.getAll('dishes');
+      for (const d of oldDishes) await DB.delete('dishes', d.id);
+      const oldOrders = await DB.getAll('orders');
+      for (const o of oldOrders) await DB.delete('orders', o.id);
+      const oldPurchases = await DB.getAll('purchases');
+      for (const p of oldPurchases) await DB.delete('purchases', p.id);
+
+      for (const d of data.dishes) await DB.put('dishes', d);
+      for (const o of data.orders) await DB.put('orders', o);
+      if (data.purchases) for (const p of data.purchases) await DB.put('purchases', p);
+      if (data.purchaseCats) await DB.setMeta('purchaseCategories', data.purchaseCats);
+      if (data.tableTags) await DB.setMeta('tableTags', data.tableTags);
+
+      await DB.setMeta('lastBackupDate', '');
+
+      const purCount = data.purchases ? data.purchases.length : 0;
+      alert(`✅ 导入成功！${data.dishes.length} 条菜品/分类，${data.orders.length} 条订单，${purCount} 条采购记录`);
+      await this.reloadAll();
+    },
+
+    async reloadAll() {
+      await this.loadDishes();
+      await this.loadOrders();
+      await this.loadPurchases();
+      await this.loadPurchaseCategories();
+      await this.loadTableTags();
+      await this.loadReport();
+      await Utils.saveLocalBackup();
+    },
+
+    // ---- 文本备份/恢复 ----
+    async openTextExport() {
+      this.textBackupMode = 'export';
+      this.textBackupContent = await Utils.exportToText();
+      this.showTextBackup = true;
+    },
+    openTextImport() {
+      this.textBackupMode = 'import';
+      this.textBackupContent = '';
+      this.showTextBackup = true;
+    },
+    copyTextBackup() {
+      if (!this.textBackupContent) return;
+      // 优先用 Clipboard API,失败则降级
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(this.textBackupContent)
+          .then(() => alert('✅ 已复制到剪贴板'))
+          .catch(() => this.fallbackCopy());
+      } else {
+        this.fallbackCopy();
+      }
+    },
+    fallbackCopy() {
+      const ta = document.createElement('textarea');
+      ta.value = this.textBackupContent;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        alert('✅ 已复制到剪贴板');
+      } catch(e) {
+        alert('复制失败,请长按手动选中复制');
+      }
+      document.body.removeChild(ta);
+    },
+    async confirmTextImport() {
+      if (!this.textBackupContent.trim()) {
+        alert('请粘贴备份文本');
+        return;
+      }
+      try {
+        await this.applyImportPayload(this.textBackupContent.trim());
+        this.showTextBackup = false;
+      } catch(e) {
+        alert('解析失败: ' + e.message);
+      }
+    },
+
+    // ---- 安装提示 ----
+    handleInstall() {
+      if (!this.installPrompt) {
+        this.showInstallTip = false;
+        return;
+      }
+      this.installPrompt.prompt();
+      this.installPrompt.userChoice.then(() => {
+        this.installPrompt = null;
+        this.showInstallTip = false;
+        localStorage.setItem('install_dismissed', '1');
+      });
+    },
+    dismissInstallTip() {
+      this.showInstallTip = false;
+      localStorage.setItem('install_dismissed', '1');
     },
 
     // ---- 订单队列 ----
@@ -223,52 +363,145 @@ const app = Vue.createApp({
       const map = { pending: '做菜', cooking: '上菜', done: '收款' };
       return map[status] || '';
     },
-    // 切换队列查看日期(delta:-1=前一天, 1=后一天, 0=今日)
     shiftQueueDate(delta) {
-      if (delta === 0) {
-        this.queueDate = Utils.today();
-        return;
-      }
-      const d = new Date(this.queueDate || Utils.today());
-      d.setDate(d.getDate() + delta);
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      this.queueDate = `${d.getFullYear()}-${m}-${dd}`;
+      if (delta === 0) { this.queueDate = Utils.today(); return; }
+      this.queueDate = Utils.shiftDate(this.queueDate || Utils.today(), delta);
     },
-    // 当日队列日期显示(今天/昨天/具体日期)
     queueDateLabel() {
       if (!this.queueDate) return '';
       const today = Utils.today();
       if (this.queueDate === today) return '今天';
-      const t = new Date(today);
-      t.setDate(t.getDate() - 1);
-      const yMm = String(t.getMonth() + 1).padStart(2, '0');
-      const yDd = String(t.getDate()).padStart(2, '0');
-      const yesterday = `${t.getFullYear()}-${yMm}-${yDd}`;
-      if (this.queueDate === yesterday) return '昨天';
+      if (this.queueDate === Utils.shiftDate(today, -1)) return '昨天';
       return this.queueDate;
     },
     isQueueToday() {
       return this.queueDate === Utils.today();
     },
+
+    // 订单等待时长(分钟)
+    waitMinutes(order) {
+      this.tick; // 触发响应式
+      if (order.status === 'paid' || order.status === 'done') return 0;
+      return Utils.minutesSince(order.createdAt);
+    },
+    waitLabel(order) {
+      const m = this.waitMinutes(order);
+      if (m <= 0) return '';
+      if (m < 60) return `等待 ${m} 分钟`;
+      const h = Math.floor(m / 60);
+      const r = m % 60;
+      return `等待 ${h}h${r}m`;
+    },
+
     async advanceOrder(id) {
       try {
-        const order = this.orders.find(o => o.id === id);
+        const order = this.activeOrders.find(o => o.id === id);
         if (!order) { alert('订单不存在'); return; }
-        const flow = { pending: 'cooking', cooking: 'done', done: 'paid' };
+        // 收款步骤改为弹框确认
+        if (order.status === 'done') {
+          this.openPayDialog(order);
+          return;
+        }
+        const flow = { pending: 'cooking', cooking: 'done' };
         const nextStatus = flow[order.status];
         if (!nextStatus) return;
         order.status = nextStatus;
-        if (nextStatus === 'paid') order.paidAt = Utils.now();
         order.updatedAt = Utils.now();
         await DB.put('orders', order);
+        await Utils.saveLocalBackup();
       } catch(e) { alert('操作失败: ' + e.message); }
       await this.loadOrders();
     },
-    async deleteOrder(id) {
-      if (!confirm('确定删除此订单？')) return;
-      await DB.delete('orders', id);
+
+    // ---- 收款弹框 ----
+    openPayDialog(order) {
+      this.payOrderId = order.id;
+      this.payActualAmount = order.totalAmount;
+      this.payNote = '';
+      this.showPayDialog = true;
+    },
+    quickRoundDown(unit) {
+      // unit=10 抹到整十,unit=1 抹零头
+      const amt = parseFloat(this.payActualAmount) || 0;
+      this.payActualAmount = Math.floor(amt / unit) * unit;
+    },
+    setDiscount(rate) {
+      const order = this.activeOrders.find(o => o.id === this.payOrderId);
+      if (!order) return;
+      this.payActualAmount = Math.round(order.totalAmount * rate * 100) / 100;
+    },
+    async confirmPay() {
+      try {
+        const order = this.activeOrders.find(o => o.id === this.payOrderId);
+        if (!order) { alert('订单不存在'); return; }
+        const actual = parseFloat(this.payActualAmount);
+        if (isNaN(actual) || actual < 0) { alert('请输入有效实收金额'); return; }
+        order.status = 'paid';
+        order.actualPaid = Math.round(actual * 100) / 100;
+        order.paymentNote = this.payNote.trim();
+        order.paidAt = Utils.now();
+        order.updatedAt = Utils.now();
+        await DB.put('orders', order);
+        await Utils.saveLocalBackup();
+      } catch(e) { alert('操作失败: ' + e.message); }
+      this.showPayDialog = false;
+      this.payOrderId = null;
       await this.loadOrders();
+    },
+    cancelPay() {
+      this.showPayDialog = false;
+      this.payOrderId = null;
+    },
+
+    // ---- 软删除 ----
+    async deleteOrder(id) {
+      const order = this.orders.find(o => o.id === id);
+      if (!order) return;
+      let reason = '';
+      if (order.status === 'paid') {
+        reason = prompt('已付款订单,请输入删除原因(必填):');
+        if (!reason || !reason.trim()) {
+          alert('已取消');
+          return;
+        }
+      } else {
+        if (!confirm('确定删除此订单?可在报表「已删除」中恢复。')) return;
+      }
+      order.deleted = true;
+      order.deletedAt = Utils.now();
+      order.deleteReason = (reason || '').trim();
+      await DB.put('orders', order);
+      await Utils.saveLocalBackup();
+      await this.loadOrders();
+    },
+    async restoreOrder(id) {
+      const order = this.orders.find(o => o.id === id);
+      if (!order) return;
+      if (!confirm('恢复此订单?')) return;
+      delete order.deleted;
+      delete order.deletedAt;
+      delete order.deleteReason;
+      await DB.put('orders', order);
+      await Utils.saveLocalBackup();
+      await this.loadOrders();
+    },
+    async permanentlyDeleteOrder(id) {
+      if (!confirm('永久删除此订单?此操作不可撤销!')) return;
+      await DB.delete('orders', id);
+      await Utils.saveLocalBackup();
+      await this.loadOrders();
+    },
+    // 启动时清理超过30天的已删除订单
+    async cleanupOldDeletedOrders() {
+      const cutoff = Utils.shiftDate(Utils.today(), -30);
+      let cleaned = 0;
+      for (const o of this.orders) {
+        if (o.deleted && o.deletedAt && o.deletedAt.substring(0, 10) < cutoff) {
+          await DB.delete('orders', o.id);
+          cleaned++;
+        }
+      }
+      if (cleaned > 0) await this.loadOrders();
     },
 
     async loadOrders() {
@@ -284,7 +517,12 @@ const app = Vue.createApp({
     // ---- 菜单管理 ----
     openAddDish() {
       this.editingDish = null;
-      this.form = { categoryId: this.menuActiveCat || 'cat_main', name: '', priceType: 'per_serving', unitPrice: 0 };
+      const catId = (this.menuActiveCat && this.menuActiveCat !== '__hot__') ? this.menuActiveCat : 'cat_main';
+      this.form = {
+        categoryId: catId, name: '', priceType: 'per_serving', unitPrice: 0,
+        flavors: catId === 'cat_main' ? [...Utils.defaultMainFlavors] : []
+      };
+      this.newFlavorInput = '';
       this.showDishForm = true;
     },
     openEditDish(dish) {
@@ -293,13 +531,24 @@ const app = Vue.createApp({
         categoryId: dish.categoryId,
         name: dish.name,
         priceType: dish.priceType,
-        unitPrice: dish.unitPrice
+        unitPrice: dish.unitPrice,
+        flavors: Array.isArray(dish.flavors) ? [...dish.flavors] : []
       };
+      this.newFlavorInput = '';
       this.showDishForm = true;
     },
     closeDishForm() {
       this.showDishForm = false;
       this.editingDish = null;
+    },
+    addFlavor() {
+      const f = this.newFlavorInput.trim();
+      if (!f) return;
+      if (!this.form.flavors.includes(f)) this.form.flavors.push(f);
+      this.newFlavorInput = '';
+    },
+    removeFlavor(idx) {
+      this.form.flavors.splice(idx, 1);
     },
     getCatDishes(catId) {
       let list = this.dishes.filter(d => d.categoryId === catId)
@@ -309,6 +558,16 @@ const app = Vue.createApp({
         list = list.filter(d => d.name.toLowerCase().includes(term));
       }
       return list;
+    },
+    dishSalesLabel(dishId) {
+      const s = this.dishSales30d[dishId];
+      if (!s) return '';
+      const num = s.count + s.weight;
+      if (num <= 0) return '';
+      // 按斤的菜品显示斤数,按份显示份数
+      const dish = this.dishes.find(d => d.id === dishId);
+      if (dish && dish.priceType === 'per_jin') return `30天 ${s.weight.toFixed(1)}斤`;
+      return `30天 ${s.count}份`;
     },
     canDeleteCat(catId) {
       return !['cat_main', 'cat_side', 'cat_fry', 'cat_drink', 'cat_other'].includes(catId);
@@ -333,7 +592,9 @@ const app = Vue.createApp({
       dish.name = this.form.name.trim();
       dish.priceType = this.form.priceType;
       dish.unitPrice = Number(this.form.unitPrice);
+      dish.flavors = [...this.form.flavors];
       await DB.put('dishes', dish);
+      await Utils.saveLocalBackup();
       this.closeDishForm();
       await this.loadDishes();
     },
@@ -362,20 +623,41 @@ const app = Vue.createApp({
       await this.loadDishes();
     },
 
+    // ---- 桌号标签管理 ----
+    async loadTableTags() {
+      this.tableTags = await Utils.initTableTags();
+    },
+    quickPickTableTag(tag) {
+      this.orderTableNote = tag;
+    },
+    async addTableTag() {
+      const t = this.newTableTagInput.trim();
+      if (!t) return;
+      if (this.tableTags.includes(t)) { alert('已存在'); return; }
+      this.tableTags.push(t);
+      await Utils.saveTableTags(this.tableTags);
+      this.newTableTagInput = '';
+    },
+    async deleteTableTag(idx) {
+      this.tableTags.splice(idx, 1);
+      await Utils.saveTableTags(this.tableTags);
+    },
+
     // ---- 新建订单 ----
     getAvailDishes(catId) {
       return this.dishes.filter(d => d.categoryId === catId && d.available !== false);
     },
     addToCart(dish) {
-      // 主菜弹出口味选择，其他直接加
-      if (dish.categoryId === 'cat_main') {
+      // 有 flavors 配置则弹出口味选择(向下兼容:旧主菜没 flavors 字段时也弹)
+      const flavors = Array.isArray(dish.flavors) ? dish.flavors : [];
+      const needFlavor = flavors.length > 0 || dish.categoryId === 'cat_main';
+      if (needFlavor) {
         this.pendingFlavorDish = dish;
         this.selectedFlavor = '';
         this.pendingWeight = 1;
         this.showFlavorPicker = true;
         return;
       }
-      // 非主菜直接加
       const existing = this.orderCart.find(item => item.dishId === dish.id && !item.flavor);
       if (existing) {
         if (existing.priceType === 'per_jin') {
@@ -411,15 +693,20 @@ const app = Vue.createApp({
     },
 
     // ---- 口味选择 ----
+    pendingFlavorOptions() {
+      const dish = this.pendingFlavorDish;
+      if (!dish) return [];
+      if (Array.isArray(dish.flavors) && dish.flavors.length > 0) return dish.flavors;
+      // 兼容旧主菜
+      return Utils.defaultMainFlavors;
+    },
     confirmFlavor() {
       const dish = this.pendingFlavorDish;
       if (!dish) return;
-      // 按斤计价时校验斤数
       if (dish.priceType === 'per_jin' && (!this.pendingWeight || this.pendingWeight <= 0)) {
         alert('请输入有效斤数'); return;
       }
       const weight = this.pendingWeight || 1;
-      // 同菜品+同口味累加，不同口味分开
       const sameItem = this.orderCart.find(
         item => item.dishId === dish.id && item.flavor === (this.selectedFlavor || '')
       );
@@ -458,7 +745,7 @@ const app = Vue.createApp({
       this.page = 'order';
     },
     getAddingOrderNum() {
-      const order = this.orders.find(o => o.id === this.addItemsToOrderId);
+      const order = this.activeOrders.find(o => o.id === this.addItemsToOrderId);
       return order ? order.orderNumber : 0;
     },
     cancelOrder() {
@@ -486,9 +773,8 @@ const app = Vue.createApp({
         }));
 
         if (this.addItemsToOrderId) {
-          const order = this.orders.find(o => o.id === this.addItemsToOrderId);
+          const order = this.activeOrders.find(o => o.id === this.addItemsToOrderId);
           if (!order) { alert('订单不存在'); return; }
-          // 加菜合并：同菜品+同口味累加，不同口味新增
           for (const newItem of items) {
             const same = order.items.find(
               i => i.dishId === newItem.dishId && (i.flavor || '') === (newItem.flavor || '')
@@ -522,15 +808,27 @@ const app = Vue.createApp({
             paidAt: null
           });
         }
+        await Utils.saveLocalBackup();
       } catch(e) { alert('提交失败: ' + e.message); }
 
-      // 重置表单并返回
       this.addItemsToOrderId = null;
       this.orderCart = [];
       this.orderTableNote = '';
-      this.queueDate = Utils.today(); // 下单后自动切回今日,确保看到新单
+      this.queueDate = Utils.today();
       this.page = 'queue';
       await this.loadOrders();
+    },
+
+    // ---- 打印小票 ----
+    openPrintDialog(order) {
+      this.printOrderId = order.id;
+      this.showPrintDialog = true;
+    },
+    getPrintOrder() {
+      return this.activeOrders.find(o => o.id === this.printOrderId);
+    },
+    doPrint() {
+      window.print();
     },
 
     // ---- 采购类加载 ----
@@ -583,6 +881,7 @@ const app = Vue.createApp({
         note: this.purchaseNote.trim(),
         createdAt: Utils.now()
       });
+      await Utils.saveLocalBackup();
       this.purchaseCateId = '';
       this.purchaseAmount = '';
       this.purchaseNote = '';
@@ -591,6 +890,7 @@ const app = Vue.createApp({
     async deletePurchase(id) {
       if (!confirm('确定删除此采购记录？')) return;
       await DB.delete('purchases', id);
+      await Utils.saveLocalBackup();
       await this.loadPurchases();
     },
 
@@ -602,17 +902,15 @@ const app = Vue.createApp({
       this.loadProfit();
     },
     loadProfit() {
-      const allOrders = this.orders;
+      const allOrders = this.activeOrders;
       const allPurchases = this.purchases;
 
       let startDate = '', endDate = '';
       if (this.profitPeriod === 'day') {
-        startDate = this.profitDate;
-        endDate = this.profitDate;
+        startDate = this.profitDate; endDate = this.profitDate;
       } else if (this.profitPeriod === 'week') {
         const range = this.getWeekRange(this.profitDate);
-        startDate = range.start;
-        endDate = range.end;
+        startDate = range.start; endDate = range.end;
       } else if (this.profitPeriod === 'month') {
         startDate = this.profitMonth + '-01';
         const y = parseInt(this.profitMonth.substring(0, 4));
@@ -624,18 +922,14 @@ const app = Vue.createApp({
         endDate = this.profitYear + '-12-31';
       }
 
-      // 营收
       const periodOrders = allOrders.filter(o => {
         if (!o.createdAt || o.status !== 'paid') return false;
         const d = o.createdAt.substring(0, 10);
         return d >= startDate && d <= endDate;
       });
-      const revenue = periodOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+      const revenue = periodOrders.reduce((sum, o) => sum + Utils.effectiveAmount(o), 0);
 
-      // 采购成本
-      const periodPurchases = allPurchases.filter(p => {
-        return p.date >= startDate && p.date <= endDate;
-      });
+      const periodPurchases = allPurchases.filter(p => p.date >= startDate && p.date <= endDate);
       const cost = periodPurchases.reduce((sum, p) => sum + (p.amount || 0), 0);
       const profit = Math.round((revenue - cost) * 100) / 100;
       const profitRate = revenue > 0 ? Math.round(profit / revenue * 10000) / 100 : 0;
@@ -643,17 +937,15 @@ const app = Vue.createApp({
       this.profitStats = {
         revenue: Math.round(revenue * 100) / 100,
         cost: Math.round(cost * 100) / 100,
-        profit,
-        profitRate,
+        profit, profitRate,
         orderCount: periodOrders.length
       };
 
-      // 按天汇总明细
       const dayMap = {};
       for (const o of periodOrders) {
         const d = o.createdAt.substring(0, 10);
         if (!dayMap[d]) dayMap[d] = { revenue: 0, cost: 0 };
-        dayMap[d].revenue += o.totalAmount || 0;
+        dayMap[d].revenue += Utils.effectiveAmount(o);
       }
       for (const p of periodPurchases) {
         if (!dayMap[p.date]) dayMap[p.date] = { revenue: 0, cost: 0 };
@@ -686,35 +978,73 @@ const app = Vue.createApp({
       return { start: fmt(mon), end: fmt(sun), weekNum };
     },
 
-    async loadReport() {
-      const all = await DB.getAll('orders');
-      let filtered = [];
-      if (this.reportPeriod === 'day') {
-        filtered = all.filter(o => o.createdAt && o.createdAt.startsWith(this.reportDate));
-      } else if (this.reportPeriod === 'week') {
-        const range = this.getWeekRange(this.reportDate);
-        filtered = all.filter(o => {
-          if (!o.createdAt) return false;
-          const d = o.createdAt.substring(0, 10);
-          return d >= range.start && d <= range.end;
-        });
-      } else if (this.reportPeriod === 'month') {
-        filtered = all.filter(o => o.createdAt && o.createdAt.startsWith(this.reportMonth));
-      } else if (this.reportPeriod === 'year') {
-        filtered = all.filter(o => o.createdAt && o.createdAt.startsWith(String(this.reportYear)));
+    getReportPeriodRange() {
+      if (this.reportPeriod === 'day') return { start: this.reportDate, end: this.reportDate };
+      if (this.reportPeriod === 'week') return this.getWeekRange(this.reportDate);
+      if (this.reportPeriod === 'month') {
+        const y = parseInt(this.reportMonth.substring(0, 4));
+        const m = parseInt(this.reportMonth.substring(5, 7));
+        const lastDay = new Date(y, m, 0).getDate();
+        return { start: this.reportMonth + '-01', end: this.reportMonth + '-' + String(lastDay).padStart(2, '0') };
       }
+      if (this.reportPeriod === 'year') {
+        return { start: this.reportYear + '-01-01', end: this.reportYear + '-12-31' };
+      }
+      return { start: '', end: '' };
+    },
+
+    switchPeriod(period) {
+      this.reportPeriod = period;
+      this.loadReport();
+    },
+
+    async loadReport() {
+      const all = this.orders;
+      const range = this.getReportPeriodRange();
+      const inRange = (createdAt) => {
+        if (!createdAt) return false;
+        const d = createdAt.substring(0, 10);
+        return d >= range.start && d <= range.end;
+      };
+      const filtered = all.filter(o => !o.deleted && inRange(o.createdAt));
       this.reportOrders = filtered.sort((a, b) => ((a.createdAt || '') > (b.createdAt || '') ? -1 : 1));
       const paidOrders = this.reportOrders.filter(o => o.status === 'paid');
       const doneOrders = this.reportOrders.filter(o => o.status === 'done');
-      // 营业中统计所有未完成的订单，不限定周期
-      const activeOrders = all.filter(o => o.status === 'pending' || o.status === 'cooking');
+      const activeOrders = all.filter(o => !o.deleted && (o.status === 'pending' || o.status === 'cooking'));
       this.reportStats = {
         total: this.reportOrders.length,
         paid: paidOrders.length,
         done: doneOrders.length + paidOrders.length,
         active: activeOrders.length,
-        revenue: paidOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0)
+        revenue: paidOrders.reduce((sum, o) => sum + Utils.effectiveAmount(o), 0)
       };
+    },
+
+    // ---- 报表图表(纯 SVG) ----
+    revenueChartPath() {
+      const data = this.last7DaysRevenue;
+      if (!data.length) return '';
+      const w = 300, h = 80, p = 8;
+      const max = Math.max(1, ...data.map(d => d.revenue));
+      const stepX = (w - 2 * p) / (data.length - 1 || 1);
+      return data.map((d, i) => {
+        const x = p + i * stepX;
+        const y = h - p - ((d.revenue / max) * (h - 2 * p));
+        return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
+      }).join(' ');
+    },
+    revenueChartPoints() {
+      const data = this.last7DaysRevenue;
+      if (!data.length) return [];
+      const w = 300, h = 80, p = 8;
+      const max = Math.max(1, ...data.map(d => d.revenue));
+      const stepX = (w - 2 * p) / (data.length - 1 || 1);
+      return data.map((d, i) => ({
+        x: p + i * stepX,
+        y: h - p - ((d.revenue / max) * (h - 2 * p)),
+        revenue: d.revenue,
+        date: d.date
+      }));
     }
   },
 
@@ -731,25 +1061,57 @@ const app = Vue.createApp({
     this.profitYear = parseInt(Utils.today().substring(0, 4));
     await DB.open();
 
+    // 启动恢复检测：IndexedDB 空但 localStorage 有备份 → 提示恢复
+    try {
+      const orderCount = (await DB.getAll('orders')).length;
+      const dishCount = (await DB.getAll('dishes')).length;
+      const lsBackup = Utils.getLocalBackup();
+      if (orderCount === 0 && dishCount === 0 && lsBackup &&
+          (lsBackup.orders?.length > 0 || lsBackup.dishes?.length > 0)) {
+        if (confirm(`⚠️ 检测到本地有备份(${lsBackup.savedAt})，包含${lsBackup.orders?.length || 0}单+${lsBackup.dishes?.length || 0}菜品/分类。当前数据库为空，是否恢复？`)) {
+          for (const d of (lsBackup.dishes || [])) await DB.put('dishes', d);
+          for (const o of (lsBackup.orders || [])) await DB.put('orders', o);
+          for (const p of (lsBackup.purchases || [])) await DB.put('purchases', p);
+          if (lsBackup.purchaseCats) await DB.setMeta('purchaseCategories', lsBackup.purchaseCats);
+          if (lsBackup.tableTags) await DB.setMeta('tableTags', lsBackup.tableTags);
+          alert('✅ 已从本地备份恢复');
+        }
+      }
+    } catch(e) { /* 静默 */ }
+
     // 每日自动备份
     const lastBackup = await DB.getMeta('lastBackupDate');
     if (lastBackup !== Utils.today()) {
       try {
         await Utils.exportData();
         await DB.setMeta('lastBackupDate', Utils.today());
-      } catch(e) { /* 静默失败，不影响使用 */ }
+      } catch(e) { /* 静默 */ }
     }
+
     await Utils.initDefaultData();
     await this.loadDishes();
     await this.loadOrders();
     await this.loadPurchaseCategories();
     await this.loadPurchases();
+    await this.loadTableTags();
     await this.loadReport();
+    await this.cleanupOldDeletedOrders();
+    await Utils.saveLocalBackup();
+
+    // 每分钟刷新等待时长
+    setInterval(() => { this.tick++; }, 60000);
+
+    // PWA 安装提示
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      this.installPrompt = e;
+      if (!localStorage.getItem('install_dismissed')) {
+        this.showInstallTip = true;
+      }
+    });
 
     this.$watch('page', async (newVal) => {
-      if (newVal === 'queue') {
-        await this.loadOrders();
-      }
+      if (newVal === 'queue') { await this.loadOrders(); }
       if (newVal === 'report') { await this.loadReport(); }
       if (newVal === 'purchase') {
         this.purchaseFilterMonth = Utils.today().substring(0, 7);

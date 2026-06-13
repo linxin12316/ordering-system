@@ -7,8 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="manifest" href="manifest.json">
   <title>点餐系统</title>
-  <link rel="stylesheet" href="css/style.css?v=7">
-  <script src="js/vue.global.js?v=7"></script>
+  <link rel="stylesheet" href="css/style.css?v=8">
+  <script src="js/vue.global.js?v=8"></script>
 </head>
 <body>
   <div id="app">
@@ -30,7 +30,7 @@
           <span class="date-bar-label">{{ queueDateLabel() }}</span>
         </div>
         <button class="date-nav-btn" @click="shiftQueueDate(1)" :disabled="isQueueToday()" :class="{disabled: isQueueToday()}">›</button>
-        <button class="date-today-btn" v-if="!isQueueToday()" @click="shiftQueueDate(0)">回到今天</button>
+        <button class="date-today-btn" v-if="!isQueueToday()" @click="shiftQueueDate(0)">回今天</button>
       </div>
 
       <!-- 当日统计条 -->
@@ -39,7 +39,7 @@
           <div class="day-stat-num">{{ queueDayStats.total }}</div>
           <div class="day-stat-lbl">总订单</div>
         </div>
-        <div class="day-stat-item queue" @click="statusFilter='pending'">
+        <div class="day-stat-item" @click="statusFilter='pending'">
           <div class="day-stat-num" :class="{warn: queueDayStats.queueing > 0}">{{ queueDayStats.queueing }}</div>
           <div class="day-stat-lbl">排队中</div>
         </div>
@@ -67,7 +67,13 @@
             <span class="order-number">#{{ String(o.orderNumber).padStart(3, '0') }}</span>
             <span class="order-table" v-if="o.tableNote"> ({{ o.tableNote }})</span>
           </div>
-          <span class="order-status">{{ statusLabel(o.status) }}</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span v-if="(o.status==='pending' || o.status==='cooking') && waitMinutes(o) > 0"
+                  class="wait-badge" :class="{urgent: waitMinutes(o) >= 20}">
+              ⏱ {{ waitLabel(o) }}
+            </span>
+            <span class="order-status">{{ statusLabel(o.status) }}</span>
+          </div>
         </div>
         <div class="order-items">
           <div v-for="(item, idx) in o.items" :key="item.dishId + '_' + (item.flavor || '') + '_' + idx">
@@ -80,17 +86,26 @@
         </div>
         <div class="order-footer">
           <div>
-            <span class="order-total">¥{{ o.totalAmount.toFixed(2) }}</span>
+            <span class="order-total">¥{{ effectiveAmount(o).toFixed(2) }}</span>
+            <span v-if="o.status==='paid' && o.actualPaid != null && o.actualPaid !== o.totalAmount"
+                  style="font-size:11px;color:var(--text-light);text-decoration:line-through;margin-left:4px">
+              ¥{{ o.totalAmount.toFixed(2) }}
+            </span>
             <span class="order-time" style="margin-left:8px">{{ o.createdAt?.split(' ')[1] }}</span>
           </div>
-          <div style="display:flex;gap:6px">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
             <button v-if="o.status !== 'paid'" class="btn btn-primary" style="padding:6px 14px;font-size:13px"
                     @click="advanceOrder(o.id)">{{ nextBtnLabel(o.status) }}</button>
             <button v-if="o.status !== 'paid'" class="btn btn-outline" style="padding:6px 10px;font-size:12px"
                     @click="startAddItems(o)">加菜</button>
+            <button class="btn btn-outline" style="padding:6px 10px;font-size:12px"
+                    @click="openPrintDialog(o)">🖨</button>
             <button class="btn btn-danger" style="padding:6px 10px;font-size:12px"
                     @click="deleteOrder(o.id)">✕</button>
           </div>
+        </div>
+        <div v-if="o.paymentNote" style="font-size:11px;color:var(--warning);margin-top:4px;padding-top:4px;border-top:1px dashed var(--border)">
+          💬 {{ o.paymentNote }}
         </div>
       </div>
     </div>
@@ -105,15 +120,45 @@
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+        <span class="cat-tag" :class="{ active: menuActiveCat === '__hot__' }"
+              @click="menuActiveCat = '__hot__'">🔥 热门</span>
         <span v-for="cat in categories" :key="cat.id"
               class="cat-tag" :class="{ active: menuActiveCat === cat.id }"
               @click="menuActiveCat = cat.id">{{ cat.name }}</span>
-        <span style="font-size:11px;color:var(--text-light);align-self:center">已选: {{ menuActiveCat ? getCatName(menuActiveCat) : '全部' }}</span>
+        <span style="font-size:11px;color:var(--text-light);align-self:center">
+          已选: {{ menuActiveCat === '__hot__' ? '热门' : (menuActiveCat ? getCatName(menuActiveCat) : '全部') }}
+        </span>
       </div>
       <div class="form-group" style="margin-bottom:10px">
         <input class="form-input" v-model="menuSearch" placeholder="🔍 搜索菜品..." style="font-size:14px;padding:8px 12px">
       </div>
-      <div class="card" v-for="cat in menuFilteredCategories" :key="cat.id" style="padding:12px" v-show="!menuSearch.trim() || getCatDishes(cat.id).length > 0">
+
+      <!-- 热门列表 -->
+      <div v-if="menuActiveCat === '__hot__'" class="card" style="padding:12px">
+        <div class="menu-group-title">🔥 近30天热门 ({{ hotDishes.length }})</div>
+        <div v-if="hotDishes.length === 0" style="text-align:center;padding:20px;color:var(--text-light);font-size:13px">
+          暂无销售数据
+        </div>
+        <div v-for="(dish, idx) in hotDishes" :key="dish.id" class="dish-item" @click="openEditDish(dish)">
+          <div class="dish-info">
+            <div class="dish-name">
+              <span style="color:var(--warning);font-weight:700;margin-right:4px">{{ idx + 1 }}.</span>
+              {{ dish.name }}
+            </div>
+            <div class="dish-price">
+              {{ dish.priceType === 'per_jin' ? '¥' + dish.unitPrice + '/斤' : '¥' + dish.unitPrice + '/份' }}
+              <span style="color:var(--danger);margin-left:6px;font-size:12px">
+                {{ dish.priceType === 'per_jin' ? dish._sales.weight.toFixed(1) + '斤' : dish._sales.count + '份' }}
+                · ¥{{ dish._sales.revenue.toFixed(0) }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 分类列表 -->
+      <div class="card" v-for="cat in menuFilteredCategories" :key="cat.id" style="padding:12px"
+           v-show="!menuSearch.trim() || getCatDishes(cat.id).length > 0">
         <div class="menu-group-title">{{ cat.name }} <span v-if="menuSearch.trim()" style="font-weight:normal;font-size:12px;color:var(--text-light)">({{ getCatDishes(cat.id).length }})</span></div>
         <div v-if="getCatDishes(cat.id).length === 0" style="text-align:center;padding:20px;color:var(--text-light);font-size:13px">
           {{ menuSearch.trim() ? '🔍 没有匹配的菜品' : '暂无菜品，点击右上角添加' }}
@@ -124,6 +169,7 @@
             <div class="dish-price">
               {{ dish.priceType === 'per_jin' ? '¥' + dish.unitPrice + '/斤' : '¥' + dish.unitPrice + '/份' }}
               <span v-if="!dish.available" style="color:var(--danger);margin-left:6px;font-size:12px">已下架</span>
+              <span v-if="dishSalesLabel(dish.id)" style="color:var(--warning);margin-left:6px;font-size:12px">{{ dishSalesLabel(dish.id) }}</span>
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center">
@@ -137,7 +183,7 @@
 
       <!-- 添加/编辑菜品弹窗 -->
       <div class="modal-overlay" v-if="showDishForm" @click.self="closeDishForm">
-        <div class="modal">
+        <div class="modal" style="max-width:380px">
           <h3>{{ editingDish ? '编辑菜品' : '添加菜品' }}</h3>
           <div class="form-group">
             <label>分类</label>
@@ -159,6 +205,22 @@
           <div class="form-group">
             <label>{{ form.priceType === 'per_jin' ? '每斤价格 (元)' : '单价 (元)' }}</label>
             <input class="form-input" type="number" v-model.number="form.unitPrice" placeholder="0" step="1" min="0">
+          </div>
+          <!-- 口味设置 -->
+          <div class="form-group">
+            <label>口味选项 <span style="font-weight:normal;font-size:12px;color:var(--text-light)">(留空则下单时不弹口味)</span></label>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+              <span v-for="(f, idx) in form.flavors" :key="f"
+                    class="flavor-chip">
+                {{ f }}
+                <span class="flavor-chip-x" @click="removeFlavor(idx)">×</span>
+              </span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <input class="form-input" v-model="newFlavorInput" placeholder="新口味,如 酸汤" style="font-size:14px;padding:8px"
+                     @keyup.enter="addFlavor">
+              <button class="btn btn-outline" style="padding:6px 12px;font-size:13px;flex-shrink:0" @click="addFlavor">+</button>
+            </div>
           </div>
           <div class="modal-actions">
             <button class="btn btn-outline" @click="closeDishForm">取消</button>
@@ -194,11 +256,18 @@
       <div class="header">
         <button class="btn btn-outline" style="padding:6px 12px;font-size:13px" @click="cancelOrder">← 返回</button>
         <h1 v-if="!addItemsToOrderId">📝 新建订单</h1>
-        <h1 v-else style="color:var(--warning)">📝 为 #{{ String(getAddingOrderNum()).padStart(3, '0') }} 加菜</h1>
+        <h1 v-else style="color:var(--warning)">📝 #{{ String(getAddingOrderNum()).padStart(3, '0') }} 加菜</h1>
         <div style="width:60px"></div>
       </div>
       <div class="form-group">
         <input class="form-input" v-model="orderTableNote" placeholder="桌号/备注（如：3号桌）" style="font-size:16px">
+        <!-- 桌号快捷标签 -->
+        <div class="table-tags">
+          <span v-for="tag in tableTags" :key="tag"
+                class="table-tag-chip" :class="{active: orderTableNote === tag}"
+                @click="quickPickTableTag(tag)">{{ tag }}</span>
+          <span class="table-tag-chip table-tag-edit" @click="showTableTagManager = true">⚙</span>
+        </div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
         <span v-for="cat in categories" :key="cat.id"
@@ -251,11 +320,14 @@
       </div>
     </div>
 
-    <!-- ========== 报表（日报/周报/月报/年报） ========== -->
+    <!-- ========== 报表 ========== -->
     <div class="page" :class="{ active: page === 'report' }">
       <div class="header">
         <h1>📊 报表</h1>
-        <button class="btn btn-outline" style="padding:6px 12px;font-size:13px" @click="exportData">📤 导出</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-outline" style="font-size:12px;padding:4px 10px" @click="openTextExport">📋</button>
+          <button class="btn btn-outline" style="font-size:12px;padding:4px 10px" @click="exportData">📤</button>
+        </div>
       </div>
 
       <!-- 周期切换 -->
@@ -266,7 +338,6 @@
         <span class="status-tab" :class="{ active: reportPeriod === 'year' }" @click="switchPeriod('year')">年报</span>
       </div>
 
-      <!-- 日期选择 -->
       <div class="form-group">
         <input v-if="reportPeriod === 'day'" class="form-input" type="date" v-model="reportDate" @change="loadReport">
         <input v-if="reportPeriod === 'week'" class="form-input" type="date" v-model="reportDate" @change="loadReport">
@@ -274,7 +345,6 @@
         <input v-if="reportPeriod === 'year'" class="form-input" type="number" v-model.number="reportYear" :min="2020" :max="2099" @change="loadReport" style="font-size:18px;font-weight:600">
       </div>
 
-      <!-- 周期范围显示 -->
       <div style="text-align:center;font-size:13px;color:var(--text-light);margin-bottom:8px">
         <template v-if="reportPeriod === 'day'">{{ reportDate }}</template>
         <template v-if="reportPeriod === 'week'">{{ weekRangeText }}</template>
@@ -282,7 +352,6 @@
         <template v-if="reportPeriod === 'year'">{{ reportYear }}年</template>
       </div>
 
-      <!-- 统计卡片 -->
       <div class="stat-cards">
         <div class="stat-card">
           <div class="stat-label">总订单</div>
@@ -302,7 +371,33 @@
         </div>
       </div>
 
-      <!-- 订单明细 -->
+      <!-- 7日营业额折线 -->
+      <div class="card" style="padding:12px">
+        <div style="font-weight:600;font-size:14px;margin-bottom:8px">📈 近7日营业额</div>
+        <svg viewBox="0 0 300 100" style="width:100%;height:100px;display:block">
+          <path :d="revenueChartPath()" fill="none" stroke="var(--primary)" stroke-width="2"/>
+          <g v-for="(p, i) in revenueChartPoints()" :key="i">
+            <circle :cx="p.x" :cy="p.y" r="3" fill="var(--primary)"/>
+            <text :x="p.x" :y="p.y - 6" text-anchor="middle" font-size="9" fill="#666">¥{{ p.revenue.toFixed(0) }}</text>
+            <text :x="p.x" y="98" text-anchor="middle" font-size="9" fill="#999">{{ p.date }}</text>
+          </g>
+        </svg>
+      </div>
+
+      <!-- 今日时段订单量 -->
+      <div class="card" style="padding:12px">
+        <div style="font-weight:600;font-size:14px;margin-bottom:8px">⏰ 今日时段订单量 (9:00-23:00)</div>
+        <div class="hour-bars">
+          <div v-for="b in todayHourlyOrders" :key="b.hour" class="hour-bar-col">
+            <div class="hour-bar-fill" :style="{height: (b.count > 0 ? Math.max(8, b.count * 12) : 2) + 'px'}"
+                 :title="b.hour + ':00 共 ' + b.count + ' 单'">
+              <span v-if="b.count > 0" class="hour-bar-num">{{ b.count }}</span>
+            </div>
+            <div class="hour-bar-lbl">{{ b.hour }}</div>
+          </div>
+        </div>
+      </div>
+
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <h3 style="font-size:15px">订单明细</h3>
         <span style="font-size:12px;color:var(--text-light)">{{ reportOrders.length }} 单</span>
@@ -315,13 +410,42 @@
             <span v-if="o.tableNote" style="font-size:13px;color:var(--text-light);margin-left:4px">({{ o.tableNote }})</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px">
-            <span style="font-weight:700;font-size:16px;color:var(--danger)">¥{{ o.totalAmount.toFixed(2) }}</span>
+            <span style="font-weight:700;font-size:16px;color:var(--danger)">¥{{ effectiveAmount(o).toFixed(2) }}</span>
             <span style="font-size:11px;padding:1px 6px;border-radius:3px;background:var(--bg)">{{ statusLabel(o.status) }}</span>
           </div>
         </div>
         <div style="font-size:12px;color:var(--text-light);margin-top:4px;display:flex;justify-content:space-between">
           <span>下单 {{ o.createdAt }}</span>
           <span v-if="o.paidAt" style="color:var(--success)">付款 {{ o.paidAt }}</span>
+        </div>
+        <div v-if="o.paymentNote" style="font-size:11px;color:var(--warning);margin-top:2px">💬 {{ o.paymentNote }}</div>
+      </div>
+
+      <!-- 已删除订单 -->
+      <div v-if="deletedOrdersOfPeriod.length > 0" class="card" style="padding:10px;margin-top:14px;background:#FFF7E6">
+        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" @click="showDeletedOrders = !showDeletedOrders">
+          <span style="font-weight:600;font-size:14px;color:var(--warning)">🗑 已删除订单 ({{ deletedOrdersOfPeriod.length }})</span>
+          <span>{{ showDeletedOrders ? '▼' : '▶' }}</span>
+        </div>
+        <div v-if="showDeletedOrders" style="margin-top:8px">
+          <div v-for="o in deletedOrdersOfPeriod" :key="o.id" style="padding:8px 0;border-top:1px dashed var(--border);font-size:13px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span>
+                <strong>#{{ String(o.orderNumber).padStart(3, '0') }}</strong>
+                <span v-if="o.tableNote" style="color:var(--text-light);margin-left:4px">({{ o.tableNote }})</span>
+                <span style="color:var(--text-light);margin-left:4px">¥{{ o.totalAmount.toFixed(2) }}</span>
+              </span>
+              <div style="display:flex;gap:4px">
+                <button class="btn btn-outline" style="padding:3px 8px;font-size:11px" @click="restoreOrder(o.id)">恢复</button>
+                <button class="btn btn-danger" style="padding:3px 8px;font-size:11px" @click="permanentlyDeleteOrder(o.id)">彻底删</button>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text-light);margin-top:2px">
+              下单 {{ o.createdAt }} · 删除 {{ o.deletedAt }}
+              <span v-if="o.deleteReason" style="color:var(--danger)">· {{ o.deleteReason }}</span>
+            </div>
+          </div>
+          <div style="margin-top:6px;font-size:11px;color:var(--text-light);text-align:center">超过30天自动彻底删除</div>
         </div>
       </div>
     </div>
@@ -333,7 +457,6 @@
         <button class="btn btn-outline" style="padding:6px 12px;font-size:12px" @click="openAddPurchaseCat">分类管理</button>
       </div>
 
-      <!-- 录入表单 -->
       <div class="card" style="padding:14px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div class="form-group" style="margin:0">
@@ -361,7 +484,6 @@
         <button class="btn btn-primary" style="width:100%;margin-top:10px;padding:10px;font-size:15px" @click="addPurchase">+ 添加采购记录</button>
       </div>
 
-      <!-- 本月采购清单 -->
       <div style="display:flex;align-items:center;gap:8px;margin:14px 0 8px">
         <input class="form-input" type="month" v-model="purchaseFilterMonth" style="width:auto;font-size:14px;padding:6px 8px;display:inline-block">
         <span style="font-size:14px;color:var(--text-light);margin-left:auto">
@@ -369,7 +491,6 @@
         </span>
       </div>
 
-      <!-- 品类汇总 -->
       <div v-if="Object.keys(purchaseMonthCats).length > 0" class="card" style="padding:12px">
         <div style="font-weight:600;font-size:14px;margin-bottom:8px">📊 品类汇总</div>
         <div v-for="(total, catName) in purchaseMonthCats" :key="catName" style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px;border-bottom:1px solid var(--border)">
@@ -378,7 +499,6 @@
         </div>
       </div>
 
-      <!-- 逐条记录 -->
       <div v-if="filteredPurchaseList.length === 0" class="empty-state">暂无采购记录</div>
       <div v-for="p in filteredPurchaseList" :key="p.id" class="card" style="padding:10px;display:flex;align-items:center;gap:10px">
         <span style="font-size:12px;color:var(--text-light);min-width:48px">{{ p.date ? p.date.slice(5) : '' }}</span>
@@ -395,7 +515,6 @@
         <h1>💰 利润分析</h1>
       </div>
 
-      <!-- 周期切换 -->
       <div class="status-tabs" style="margin-bottom:10px">
         <span class="status-tab" :class="{ active: profitPeriod === 'day' }" @click="switchProfitPeriod('day')">日报</span>
         <span class="status-tab" :class="{ active: profitPeriod === 'week' }" @click="switchProfitPeriod('week')">周报</span>
@@ -403,7 +522,6 @@
         <span class="status-tab" :class="{ active: profitPeriod === 'year' }" @click="switchProfitPeriod('year')">年报</span>
       </div>
 
-      <!-- 日期选择 -->
       <div class="form-group">
         <input v-if="profitPeriod === 'day'" class="form-input" type="date" v-model="profitDate" @change="loadProfit">
         <input v-if="profitPeriod === 'week'" class="form-input" type="date" v-model="profitDate" @change="loadProfit">
@@ -411,7 +529,6 @@
         <input v-if="profitPeriod === 'year'" class="form-input" type="number" v-model.number="profitYear" :min="2020" :max="2099" @change="loadProfit" style="font-size:18px;font-weight:600">
       </div>
 
-      <!-- 周期范围 -->
       <div style="text-align:center;font-size:13px;color:var(--text-light);margin-bottom:8px">
         <template v-if="profitPeriod === 'day'">{{ profitDate }}</template>
         <template v-if="profitPeriod === 'week'">{{ profitWeekRangeText }}</template>
@@ -419,7 +536,6 @@
         <template v-if="profitPeriod === 'year'">{{ profitYear }}年</template>
       </div>
 
-      <!-- 统计卡片 -->
       <div class="stat-cards" style="grid-template-columns:1fr 1fr">
         <div class="stat-card">
           <div class="stat-label">营业额</div>
@@ -443,7 +559,6 @@
         </div>
       </div>
 
-      <!-- 每日明细 -->
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <h3 style="font-size:15px">每日明细</h3>
         <span style="font-size:12px;color:var(--text-light)">{{ profitStats.orderCount }} 单已付款</span>
@@ -476,17 +591,126 @@
                  style="font-size:18px;padding:10px;text-align:center" placeholder="输入斤数">
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0">
-          <div v-for="opt in flavorOptions" :key="opt.value"
-               class="cat-tag" :class="{ active: selectedFlavor === opt.value }"
-               @click="selectedFlavor = opt.value"
+          <div v-for="opt in pendingFlavorOptions()" :key="opt"
+               class="cat-tag" :class="{ active: selectedFlavor === opt }"
+               @click="selectedFlavor = opt"
                style="padding:12px 8px;text-align:center;font-size:14px;justify-content:center">
-            {{ opt.label }}
+            {{ opt }}
           </div>
         </div>
         <div class="modal-actions">
           <button class="btn btn-outline" @click="cancelFlavor">不备注</button>
           <button class="btn btn-primary" @click="confirmFlavor">确定</button>
         </div>
+      </div>
+    </div>
+
+    <!-- ========== 收款弹窗 ========== -->
+    <div class="modal-overlay" v-if="showPayDialog" @click.self="cancelPay">
+      <div class="modal">
+        <h3>💰 收款</h3>
+        <div style="text-align:center;margin-bottom:14px;padding:10px;background:var(--bg);border-radius:8px">
+          <div style="font-size:13px;color:var(--text-light)">应收</div>
+          <div style="font-size:24px;font-weight:700;color:var(--primary)">
+            ¥{{ (orders.find(o => o.id === payOrderId)?.totalAmount || 0).toFixed(2) }}
+          </div>
+        </div>
+        <div class="form-group">
+          <label style="font-weight:600">实收金额</label>
+          <input class="form-input" type="number" v-model.number="payActualAmount" step="0.01" min="0"
+                 style="font-size:24px;padding:12px;text-align:center;font-weight:700;color:var(--danger)">
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
+          <span class="quick-tag" @click="quickRoundDown(10)">抹到整十</span>
+          <span class="quick-tag" @click="quickRoundDown(1)">抹零头</span>
+          <span class="quick-tag" @click="setDiscount(0.95)">95折</span>
+          <span class="quick-tag" @click="setDiscount(0.9)">9折</span>
+          <span class="quick-tag" @click="setDiscount(0.8)">8折</span>
+        </div>
+        <div class="form-group">
+          <label style="font-size:13px">备注 (送菜/熟客等,选填)</label>
+          <input class="form-input" v-model="payNote" placeholder="选填" style="font-size:14px;padding:8px">
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" @click="cancelPay">取消</button>
+          <button class="btn btn-primary" @click="confirmPay">确认收款</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 打印小票弹窗 ========== -->
+    <div class="modal-overlay" v-if="showPrintDialog" @click.self="showPrintDialog=false">
+      <div class="modal" style="max-width:300px">
+        <div class="print-receipt" v-if="getPrintOrder()">
+          <div class="receipt-title">点餐小票</div>
+          <div class="receipt-row"><span>订单</span><span>#{{ String(getPrintOrder().orderNumber).padStart(3, '0') }}</span></div>
+          <div class="receipt-row" v-if="getPrintOrder().tableNote"><span>桌号</span><span>{{ getPrintOrder().tableNote }}</span></div>
+          <div class="receipt-row"><span>时间</span><span>{{ getPrintOrder().createdAt }}</span></div>
+          <div class="receipt-divider"></div>
+          <div v-for="(item, idx) in getPrintOrder().items" :key="idx" class="receipt-item">
+            <div>
+              {{ item.name }}<span v-if="item.flavor"> ·{{ item.flavor }}</span>
+              <span v-if="item.priceType === 'per_jin'"> {{ item.weight }}斤</span>
+              <span v-else> ×{{ item.quantity }}</span>
+            </div>
+            <div>¥{{ item.subtotal.toFixed(2) }}</div>
+          </div>
+          <div class="receipt-divider"></div>
+          <div class="receipt-row receipt-total"><span>合计</span><span>¥{{ getPrintOrder().totalAmount.toFixed(2) }}</span></div>
+          <div v-if="getPrintOrder().actualPaid != null && getPrintOrder().actualPaid !== getPrintOrder().totalAmount"
+               class="receipt-row" style="color:#F44">
+            <span>实收</span><span>¥{{ getPrintOrder().actualPaid.toFixed(2) }}</span>
+          </div>
+          <div class="receipt-thanks">谢谢惠顾</div>
+        </div>
+        <div class="modal-actions no-print">
+          <button class="btn btn-outline" @click="showPrintDialog=false">关闭</button>
+          <button class="btn btn-primary" @click="doPrint">🖨 打印</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 桌号标签管理弹窗 ========== -->
+    <div class="modal-overlay" v-if="showTableTagManager" @click.self="showTableTagManager=false">
+      <div class="modal">
+        <h3>桌号快捷标签</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
+          <span v-for="(tag, idx) in tableTags" :key="tag" class="flavor-chip">
+            {{ tag }}
+            <span class="flavor-chip-x" @click="deleteTableTag(idx)">×</span>
+          </span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <input class="form-input" v-model="newTableTagInput" placeholder="如:7号桌" style="font-size:14px"
+                 @keyup.enter="addTableTag">
+          <button class="btn btn-primary" @click="addTableTag">添加</button>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" @click="showTableTagManager=false">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 文本备份/恢复弹窗 ========== -->
+    <div class="modal-overlay" v-if="showTextBackup" @click.self="showTextBackup=false">
+      <div class="modal" style="max-width:380px">
+        <h3>{{ textBackupMode === 'export' ? '📋 导出文本备份' : '📥 文本恢复' }}</h3>
+        <div style="font-size:12px;color:var(--text-light);margin-bottom:8px">
+          {{ textBackupMode === 'export' ? '复制以下文本,粘贴到聊天工具发到另一台设备' : '粘贴另一台设备复制的备份文本' }}
+        </div>
+        <textarea v-model="textBackupContent"
+                  :readonly="textBackupMode === 'export'"
+                  style="width:100%;height:160px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:11px;font-family:monospace"
+                  :placeholder="textBackupMode === 'import' ? '在此粘贴备份 JSON 文本...' : ''"></textarea>
+        <div class="modal-actions">
+          <button class="btn btn-outline" @click="showTextBackup=false">关闭</button>
+          <button v-if="textBackupMode === 'export'" class="btn btn-primary" @click="copyTextBackup">复制</button>
+          <button v-else class="btn btn-primary" @click="confirmTextImport">确认恢复</button>
+        </div>
+        <button v-if="textBackupMode === 'export'" class="btn btn-outline"
+                style="width:100%;margin-top:8px;font-size:13px" @click="textBackupMode='import';textBackupContent=''">
+          → 切换到「文本恢复」
+        </button>
       </div>
     </div>
 
@@ -511,8 +735,17 @@
       </div>
     </div>
 
+    <!-- 安装提示条 -->
+    <div v-if="showInstallTip" class="install-tip no-print">
+      <span>💡 添加到桌面,离线也能用</span>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-primary" style="padding:4px 12px;font-size:12px" @click="handleInstall">安装</button>
+        <button class="btn btn-outline" style="padding:4px 8px;font-size:12px" @click="dismissInstallTip">×</button>
+      </div>
+    </div>
+
     <!-- 底部导航 -->
-    <nav class="bottom-nav">
+    <nav class="bottom-nav no-print">
       <button :class="{ active: page === 'queue' }" @click="page='queue'">
         <span class="nav-icon">📋</span>订单
       </button>
@@ -530,12 +763,12 @@
       </button>
     </nav>
 
-    <button class="fab" @click="page='order'" v-show="page !== 'order' && page !== 'purchase'">+</button>
+    <button class="fab no-print" @click="page='order'" v-show="page !== 'order' && page !== 'purchase'">+</button>
   </div>
 
-  <script src="js/vue.global.js?v=7"></script>
-  <script src="js/db.js?v=7"></script>
-  <script src="js/utils.js?v=7"></script>
-  <script src="js/app.js?v=7"></script>
+  <script src="js/vue.global.js?v=8"></script>
+  <script src="js/db.js?v=8"></script>
+  <script src="js/utils.js?v=8"></script>
+  <script src="js/app.js?v=8"></script>
 </body>
 </html>

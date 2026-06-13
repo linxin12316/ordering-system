@@ -28,6 +28,22 @@ const Utils = {
     return `${this.today()} 星期${weekDays[d.getDay()]}`;
   },
 
+  // 给定一个 createdAt(YYYY-MM-DD HH:mm),返回距今分钟数
+  minutesSince(timestamp) {
+    if (!timestamp) return 0;
+    const t = timestamp.replace(' ', 'T');
+    const past = new Date(t).getTime();
+    if (isNaN(past)) return 0;
+    return Math.max(0, Math.floor((Date.now() - past) / 60000));
+  },
+
+  // YYYY-MM-DD 加减天数
+  shiftDate(dateStr, delta) {
+    const d = new Date(dateStr || this.today());
+    d.setDate(d.getDate() + delta);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  },
+
   defaultPurchaseCategories: [
     { id: 'pc_meat', name: '肉类', sortOrder: 1 },
     { id: 'pc_veg', name: '蔬菜', sortOrder: 2 },
@@ -49,6 +65,20 @@ const Utils = {
     await DB.setMeta('purchaseCategories', JSON.stringify(cats));
   },
 
+  // 默认桌号快捷标签
+  defaultTableTags: ['1号桌', '2号桌', '3号桌', '4号桌', '5号桌', '6号桌', '打包', '外卖'],
+
+  async initTableTags() {
+    let tags = await DB.getMeta('tableTags');
+    if (tags) return JSON.parse(tags);
+    await DB.setMeta('tableTags', JSON.stringify(this.defaultTableTags));
+    return [...this.defaultTableTags];
+  },
+
+  async saveTableTags(tags) {
+    await DB.setMeta('tableTags', JSON.stringify(tags));
+  },
+
   defaultCategories: [
     { id: 'cat_main', name: '主菜', sortOrder: 1 },
     { id: 'cat_side', name: '配菜', sortOrder: 2 },
@@ -56,6 +86,9 @@ const Utils = {
     { id: 'cat_drink', name: '酒水', sortOrder: 4 },
     { id: 'cat_other', name: '其他', sortOrder: 5 }
   ],
+
+  // 默认主菜口味(给老菜品迁移用)
+  defaultMainFlavors: ['酸汤', '青椒', '清汤', '鸳鸯(酸汤+青椒)', '鸳鸯(酸汤+清汤)', '鸳鸯(青椒+清汤)'],
 
   defaultDishes: [
     { categoryId: 'cat_main', name: '连鱼', priceType: 'per_jin', unitPrice: 60 },
@@ -106,32 +139,44 @@ const Utils = {
       }
       for (const dish of this.defaultDishes) {
         await DB.put('dishes', {
-          ...dish, id: this.genId(), available: true, _type: 'dish', createdAt: this.now()
+          ...dish, id: this.genId(), available: true, _type: 'dish', createdAt: this.now(),
+          flavors: dish.categoryId === 'cat_main' ? [...this.defaultMainFlavors] : []
         });
       }
       await DB.setMeta('data_inited', true);
-      await DB.setMeta('menu_version', 2);
+      await DB.setMeta('menu_version', 3);
       return;
     }
 
     // 已有用户菜单迁移：version < 2 → 替换为备份数据
     const menuVer = await DB.getMeta('menu_version');
     if (!menuVer || menuVer < 2) {
-      // 删除现有所有菜品和分类（保留订单数据）
       const all = await DB.getAll('dishes');
       for (const d of all) {
         await DB.delete('dishes', d.id);
       }
-      // 重新插入备份的菜单
       for (const cat of this.defaultCategories) {
         await DB.put('dishes', { ...cat, _type: 'category' });
       }
       for (const dish of this.defaultDishes) {
         await DB.put('dishes', {
-          ...dish, id: this.genId(), available: true, _type: 'dish', createdAt: this.now()
+          ...dish, id: this.genId(), available: true, _type: 'dish', createdAt: this.now(),
+          flavors: dish.categoryId === 'cat_main' ? [...this.defaultMainFlavors] : []
         });
       }
-      await DB.setMeta('menu_version', 2);
+      await DB.setMeta('menu_version', 3);
+    }
+
+    // v3 迁移：给所有 cat_main 菜品补 flavors 字段
+    if ((await DB.getMeta('menu_version')) < 3) {
+      const all = await DB.getAll('dishes');
+      for (const d of all) {
+        if (d._type === 'dish' && d.categoryId === 'cat_main' && !Array.isArray(d.flavors)) {
+          d.flavors = [...this.defaultMainFlavors];
+          await DB.put('dishes', d);
+        }
+      }
+      await DB.setMeta('menu_version', 3);
     }
   },
 
@@ -140,8 +185,9 @@ const Utils = {
     const orders = await DB.getAll('orders');
     const purchases = await DB.getAll('purchases');
     const purchaseCats = await DB.getMeta('purchaseCategories');
+    const tableTags = await DB.getMeta('tableTags');
     const blob = new Blob(
-      [JSON.stringify({ dishes, orders, purchases, purchaseCats, exportedAt: this.now() }, null, 2)],
+      [JSON.stringify({ dishes, orders, purchases, purchaseCats, tableTags, exportedAt: this.now() }, null, 2)],
       { type: 'application/json' }
     );
     const url = URL.createObjectURL(blob);
@@ -152,8 +198,65 @@ const Utils = {
     URL.revokeObjectURL(url);
   },
 
+  // ---- 文本备份/恢复(跨设备简单同步) ----
+  async exportToText() {
+    const dishes = await DB.getAll('dishes');
+    const orders = await DB.getAll('orders');
+    const purchases = await DB.getAll('purchases');
+    const purchaseCats = await DB.getMeta('purchaseCategories');
+    const tableTags = await DB.getMeta('tableTags');
+    return JSON.stringify({ dishes, orders, purchases, purchaseCats, tableTags, exportedAt: this.now() });
+  },
+
+  // ---- localStorage 双备份(IndexedDB 容易被浏览器清理,加一层冗余) ----
+  // 容量限制约 5MB，订单数据通常远小于此
+  LS_KEY: 'ordering_system_lsbackup',
+  async saveLocalBackup() {
+    try {
+      const data = {
+        dishes: await DB.getAll('dishes'),
+        orders: await DB.getAll('orders'),
+        purchases: await DB.getAll('purchases'),
+        purchaseCats: await DB.getMeta('purchaseCategories'),
+        tableTags: await DB.getMeta('tableTags'),
+        savedAt: this.now()
+      };
+      localStorage.setItem(this.LS_KEY, JSON.stringify(data));
+    } catch(e) {
+      console.warn('localStorage 备份失败', e);
+    }
+  },
+  getLocalBackup() {
+    try {
+      const raw = localStorage.getItem(this.LS_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch(e) { return null; }
+  },
+
   statusLabel(status) {
     const map = { pending: '待处理', cooking: '制作中', done: '已完成', paid: '已付款' };
     return map[status] || status;
+  },
+
+  // ---- 销量统计：返回 dishId → {count, weight, revenue} ----
+  computeDishSales(orders, sinceDate) {
+    const sales = {};
+    for (const o of orders) {
+      if (o.deleted) continue;
+      if (sinceDate && o.createdAt && o.createdAt.substring(0, 10) < sinceDate) continue;
+      for (const item of (o.items || [])) {
+        if (!sales[item.dishId]) sales[item.dishId] = { count: 0, weight: 0, revenue: 0 };
+        sales[item.dishId].count += item.quantity || 0;
+        sales[item.dishId].weight += item.weight || 0;
+        sales[item.dishId].revenue += item.subtotal || 0;
+      }
+    }
+    return sales;
+  },
+
+  // 实收金额：优先 actualPaid，否则 totalAmount
+  effectiveAmount(order) {
+    if (order.status === 'paid' && typeof order.actualPaid === 'number') return order.actualPaid;
+    return order.totalAmount || 0;
   }
 };

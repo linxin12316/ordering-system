@@ -1,5 +1,5 @@
 // sw.js — Service Worker（网络优先，离线回退缓存）
-const CACHE_NAME = 'ordering-system-v7';
+const CACHE_NAME = 'ordering-system-v8';
 
 self.addEventListener('install', () => self.skipWaiting());
 

@@ -77,6 +77,17 @@ body {
   font-size: 14px; padding: 4px 12px; border-radius: 4px; background: var(--gray); color: white; font-weight: 600;
 }
 
+/* 等待时长徽章 */
+.wait-badge {
+  font-size: 11px; padding: 2px 7px; border-radius: 10px;
+  background: var(--bg); color: var(--text-light);
+  border: 1px solid var(--border); font-weight: 500;
+}
+.wait-badge.urgent {
+  background: #FFF1F0; color: var(--danger); border-color: #FFA39E;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
 .order-card .order-items { font-size: 16px; color: var(--text); line-height: 1.7; margin-bottom: 8px; font-weight: 500; }
 .order-card .order-footer {
   display: flex; justify-content: space-between; align-items: center;
@@ -169,10 +180,12 @@ body {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0,0,0,0.4); z-index: 200;
   display: flex; align-items: center; justify-content: center;
+  padding: 12px;
 }
 .modal {
   background: var(--card); border-radius: var(--radius); padding: 20px;
-  width: 85%; max-width: 340px; box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+  width: 100%; max-width: 340px; box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+  max-height: 90vh; overflow-y: auto;
 }
 .modal h3 { font-size: 17px; margin-bottom: 14px; text-align: center; }
 .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
@@ -282,3 +295,119 @@ body {
   margin-left: 3px; font-weight: 600;
 }
 .status-tab.active em { background: white; color: var(--primary); }
+
+/* 口味/标签 chip */
+.flavor-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 4px 10px; border-radius: 14px; font-size: 13px;
+  background: var(--bg); border: 1px solid var(--border);
+}
+.flavor-chip-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--danger); color: white; font-size: 11px; line-height: 1;
+  cursor: pointer; margin-left: 2px;
+}
+
+/* 桌号快捷标签 */
+.table-tags {
+  display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px;
+}
+.table-tag-chip {
+  padding: 5px 11px; border-radius: 14px; font-size: 13px;
+  background: var(--bg); border: 1px solid var(--border);
+  cursor: pointer;
+}
+.table-tag-chip.active {
+  background: var(--primary); color: white; border-color: var(--primary);
+}
+.table-tag-edit {
+  background: white; color: var(--text-light);
+}
+
+/* 收款快捷标签 */
+.quick-tag {
+  padding: 6px 12px; border-radius: 14px; font-size: 13px;
+  background: #E6F7FF; color: var(--primary); border: 1px solid #91D5FF;
+  cursor: pointer; font-weight: 500;
+}
+.quick-tag:active { background: var(--primary); color: white; }
+
+/* 时段柱状图 */
+.hour-bars {
+  display: flex; align-items: flex-end; gap: 2px;
+  height: 90px; margin-top: 8px;
+}
+.hour-bar-col {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: flex-end; height: 100%;
+}
+.hour-bar-fill {
+  width: 100%; background: linear-gradient(to top, var(--primary), #91D5FF);
+  border-radius: 3px 3px 0 0; min-height: 2px;
+  display: flex; align-items: flex-start; justify-content: center;
+  position: relative;
+}
+.hour-bar-num {
+  font-size: 9px; color: var(--primary); font-weight: 600;
+  position: absolute; top: -12px;
+}
+.hour-bar-lbl {
+  font-size: 9px; color: var(--text-light); margin-top: 2px;
+}
+
+/* 安装提示条 */
+.install-tip {
+  position: fixed; left: 12px; right: 12px; bottom: 78px;
+  background: var(--card); border-radius: var(--radius);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  padding: 10px 14px; z-index: 150;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; border: 1px solid var(--primary);
+}
+
+/* 小票样式 */
+.print-receipt {
+  font-family: 'Courier New', monospace;
+  background: white; padding: 12px 8px;
+  font-size: 13px; line-height: 1.5;
+  color: #000;
+}
+.receipt-title {
+  text-align: center; font-size: 17px; font-weight: 700;
+  padding-bottom: 8px; margin-bottom: 6px;
+}
+.receipt-row {
+  display: flex; justify-content: space-between;
+  font-size: 12px; padding: 2px 0;
+}
+.receipt-row.receipt-total {
+  font-size: 15px; font-weight: 700; padding: 6px 0;
+}
+.receipt-divider {
+  border-top: 1px dashed #000; margin: 6px 0;
+}
+.receipt-item {
+  display: flex; justify-content: space-between;
+  font-size: 12px; padding: 2px 0;
+  gap: 8px;
+}
+.receipt-item > div:first-child { flex: 1; }
+.receipt-thanks {
+  text-align: center; font-size: 12px;
+  margin-top: 10px; padding-top: 6px;
+  border-top: 1px dashed #000;
+}
+
+/* 打印时只显示小票 */
+@media print {
+  body * { visibility: hidden; }
+  .modal-overlay { background: white !important; padding: 0; }
+  .modal { box-shadow: none !important; max-width: 100% !important; padding: 0 !important; }
+  .print-receipt, .print-receipt * { visibility: visible; }
+  .print-receipt {
+    position: absolute; left: 0; top: 0; width: 100%;
+    padding: 8px;
+  }
+  .no-print { display: none !important; }
+}
