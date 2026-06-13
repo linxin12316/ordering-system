@@ -7,8 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="manifest" href="manifest.json">
   <title>点餐系统</title>
-  <link rel="stylesheet" href="css/style.css?v=8">
-  <script src="js/vue.global.js?v=8"></script>
+  <link rel="stylesheet" href="css/style.css?v=8.1">
+  <script src="js/vue.global.js?v=8.1"></script>
 </head>
 <body>
   <div id="app">
@@ -374,12 +374,12 @@
       <!-- 7日营业额折线 -->
       <div class="card" style="padding:12px">
         <div style="font-weight:600;font-size:14px;margin-bottom:8px">📈 近7日营业额</div>
-        <svg viewBox="0 0 300 100" style="width:100%;height:100px;display:block">
+        <svg viewBox="0 0 320 130" style="width:100%;height:130px;display:block;overflow:visible">
           <path :d="revenueChartPath()" fill="none" stroke="var(--primary)" stroke-width="2"/>
           <g v-for="(p, i) in revenueChartPoints()" :key="i">
             <circle :cx="p.x" :cy="p.y" r="3" fill="var(--primary)"/>
-            <text :x="p.x" :y="p.y - 6" text-anchor="middle" font-size="9" fill="#666">¥{{ p.revenue.toFixed(0) }}</text>
-            <text :x="p.x" y="98" text-anchor="middle" font-size="9" fill="#999">{{ p.date }}</text>
+            <text :x="p.x" :y="p.y - 8" text-anchor="middle" font-size="10" fill="#666">¥{{ p.revenue.toFixed(0) }}</text>
+            <text :x="p.x" y="126" text-anchor="middle" font-size="10" fill="#999">{{ p.date }}</text>
           </g>
         </svg>
       </div>
@@ -766,9 +766,9 @@
     <button class="fab no-print" @click="page='order'" v-show="page !== 'order' && page !== 'purchase'">+</button>
   </div>
 
-  <script src="js/vue.global.js?v=8"></script>
-  <script src="js/db.js?v=8"></script>
-  <script src="js/utils.js?v=8"></script>
-  <script src="js/app.js?v=8"></script>
+  <script src="js/vue.global.js?v=8.1"></script>
+  <script src="js/db.js?v=8.1"></script>
+  <script src="js/utils.js?v=8.1"></script>
+  <script src="js/app.js?v=8.1"></script>
 </body>
 </html>

@@ -1021,27 +1021,28 @@ const app = Vue.createApp({
     },
 
     // ---- 报表图表(纯 SVG) ----
+    // viewBox: 320x130, 顶部预留 18 给金额标签,底部预留 18 给日期标签,左右各 18 防溢出
     revenueChartPath() {
       const data = this.last7DaysRevenue;
       if (!data.length) return '';
-      const w = 300, h = 80, p = 8;
+      const w = 320, padX = 22, top = 18, bottom = 112; // 折线纵向区间 [top, bottom]
       const max = Math.max(1, ...data.map(d => d.revenue));
-      const stepX = (w - 2 * p) / (data.length - 1 || 1);
+      const stepX = (w - 2 * padX) / (data.length - 1 || 1);
       return data.map((d, i) => {
-        const x = p + i * stepX;
-        const y = h - p - ((d.revenue / max) * (h - 2 * p));
+        const x = padX + i * stepX;
+        const y = bottom - ((d.revenue / max) * (bottom - top));
         return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
       }).join(' ');
     },
     revenueChartPoints() {
       const data = this.last7DaysRevenue;
       if (!data.length) return [];
-      const w = 300, h = 80, p = 8;
+      const w = 320, padX = 22, top = 18, bottom = 112;
       const max = Math.max(1, ...data.map(d => d.revenue));
-      const stepX = (w - 2 * p) / (data.length - 1 || 1);
+      const stepX = (w - 2 * padX) / (data.length - 1 || 1);
       return data.map((d, i) => ({
-        x: p + i * stepX,
-        y: h - p - ((d.revenue / max) * (h - 2 * p)),
+        x: padX + i * stepX,
+        y: bottom - ((d.revenue / max) * (bottom - top)),
         revenue: d.revenue,
         date: d.date
       }));
